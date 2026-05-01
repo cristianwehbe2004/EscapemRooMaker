@@ -26,8 +26,7 @@ public class SessionActionProcessor(
         var room = await dbContext.Rooms.FirstOrDefaultAsync(x => x.Id == session.RoomId, cancellationToken)
             ?? throw new InvalidOperationException($"Room '{session.RoomId}' was not found.");
 
-        var graph = JsonSerializer.Deserialize<TriggerGraphDefinition>(room.GraphDefinition, JsonOptions())
-            ?? throw new InvalidOperationException("Room graph definition is invalid JSON.");
+        var graph = ParseTriggerGraph(room.GraphDefinition);
         var validation = graphValidator.Validate(graph);
         if (!validation.IsValid)
         {
@@ -195,4 +194,23 @@ public class SessionActionProcessor(
     }
 
     private static JsonSerializerOptions JsonOptions() => new(JsonSerializerDefaults.Web);
+
+    private static TriggerGraphDefinition ParseTriggerGraph(string graphDefinitionJson)
+    {
+        if (string.IsNullOrWhiteSpace(graphDefinitionJson))
+        {
+            throw new InvalidOperationException("Room graph definition is empty.");
+        }
+
+        using var parsed = JsonDocument.Parse(graphDefinitionJson);
+        var root = parsed.RootElement;
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("triggerGraph", out var triggerGraphElement))
+        {
+            var triggerGraph = triggerGraphElement.Deserialize<TriggerGraphDefinition>(JsonOptions());
+            return triggerGraph ?? throw new InvalidOperationException("Room trigger graph is invalid JSON.");
+        }
+
+        var graph = JsonSerializer.Deserialize<TriggerGraphDefinition>(graphDefinitionJson, JsonOptions());
+        return graph ?? throw new InvalidOperationException("Room graph definition is invalid JSON.");
+    }
 }

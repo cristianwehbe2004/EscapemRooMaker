@@ -14,6 +14,9 @@ jest.mock(
 );
 
 jest.mock("./pages/PlayerPage", () => () => <div>Player Experience (Day 4 Slice)</div>);
+jest.mock("./pages/EditorPage", () => () => <div>Editor Experience</div>);
+jest.mock("./pages/GMPage", () => () => <div>GM Experience</div>);
+jest.mock("./pages/LibraryPage", () => () => <div>Library Experience</div>);
 
 test("renders player experience header", () => {
   render(<App />);

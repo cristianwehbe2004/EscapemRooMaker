@@ -7,6 +7,7 @@ using EscapeRoom.Infrastructure.Seeding;
 using EscapeRoom.Infrastructure.Security;
 using EscapeRoom.Infrastructure.Triggering;
 using EscapeRoom.Application.Realtime;
+using EscapeRoom.Application.Rooms;
 using EscapeRoom.TriggerEngine;
 using EscapeRoom.TriggerEngine.Idempotency;
 using Microsoft.AspNetCore.Identity;
@@ -14,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using StackExchange.Redis;
+using EscapeRoom.Infrastructure.Rooms;
 
 namespace EscapeRoom.Infrastructure;
 
@@ -32,6 +34,7 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IGmPanelQueryService, GmPanelQueryService>();
+        services.AddScoped<ICreatorRoomService, CreatorRoomService>();
         services.AddScoped<ISessionActionProcessor, SessionActionProcessor>();
         services.AddScoped<ISessionLockService, RedisSessionLockService>();
         services.AddScoped<ISessionStateStore, RedisSessionStateStore>();

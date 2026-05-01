@@ -13,6 +13,7 @@ import { InventoryCombineActionPayload, InventoryUseActionPayload, PlayerActionE
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5000";
 
 const PlayerPage: React.FC = () => {
+  const sessionIdFromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("sessionId") : null;
   const [sessionInput, setSessionInput] = useState("");
   const [actorInput, setActorInput] = useState("player-local");
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -29,6 +30,7 @@ const PlayerPage: React.FC = () => {
   const { runWithCooldown, getRemainingMs } = useActionCooldown(900);
   const lastSnapshotSyncAtRef = useRef(0);
   const clientRef = useRef<GameRealtimeClient | null>(null);
+  const autoJoinAttemptedRef = useRef(false);
 
   const {
     sessionId,
@@ -212,6 +214,29 @@ const PlayerPage: React.FC = () => {
       setConnectionError(error instanceof Error ? error.message : "Could not connect to game hub.");
     }
   };
+
+  useEffect(() => {
+    if (!sessionIdFromUrl || autoJoinAttemptedRef.current || connected || sessionId) {
+      return;
+    }
+
+    autoJoinAttemptedRef.current = true;
+    setSessionInput(sessionIdFromUrl);
+    void (async () => {
+      try {
+        setConnectionError(null);
+        setActionError(null);
+        const ack = await client.start(sessionIdFromUrl);
+        setSessionId(ack.sessionId);
+        setConnectionStatus({ connected: true });
+        setSyncState("synced");
+        setLastActionLabel(`Joined session ${ack.sessionId}`);
+      } catch (error) {
+        setConnectionStatus({ connected: false });
+        setConnectionError(error instanceof Error ? error.message : "Could not connect to game hub.");
+      }
+    })();
+  }, [client, connected, sessionId, sessionIdFromUrl, setConnectionStatus, setSessionId, setSyncState]);
 
   const submitAction = async (
     actionType: string,
