@@ -6,7 +6,7 @@ describe("gameStore", () => {
     useGameStore.getState().reset();
   });
 
-  it("applies a snapshot payload", () => {
+  it("applies a snapshot payload with rich room state", () => {
     const snapshot: SessionSnapshotEnvelope = {
       sessionId: "session-1",
       sessionVersion: 5,
@@ -15,7 +15,24 @@ describe("gameStore", () => {
           roomName: "Basement",
           width: 640,
           height: 480,
-          interactables: [{ id: "door", name: "Door", x: 10, y: 10, width: 90, height: 140, color: "#aaa", available: true }],
+          backgroundColor: "#111827",
+          assets: [{ id: "bg", kind: "background", x: 0, y: 0, width: 640, height: 480, zIndex: 0, visible: true, opacity: 1 }],
+          hotspots: [
+            {
+              id: "door",
+              name: "Door",
+              x: 10,
+              y: 10,
+              width: 90,
+              height: 140,
+              color: "#aaa",
+              available: true,
+              visible: true,
+              locked: false,
+              interactive: true,
+            },
+          ],
+          objectStates: [{ id: "door", visible: true, available: true, locked: false, interactive: true }],
         },
         inventory: [{ id: "key-1", label: "Key", quantity: 1 }],
         messages: ["welcome"],
@@ -29,7 +46,30 @@ describe("gameStore", () => {
     expect(state.sessionId).toBe("session-1");
     expect(state.sessionVersion).toBe(5);
     expect(state.state.room.roomName).toBe("Basement");
+    expect(state.state.room.hotspots).toHaveLength(1);
     expect(state.state.inventory).toEqual([{ id: "key-1", label: "Key", quantity: 1 }]);
+  });
+
+  it("maps legacy interactables from snapshot into hotspots", () => {
+    const snapshot: SessionSnapshotEnvelope = {
+      sessionId: "session-legacy",
+      sessionVersion: 3,
+      stateJson: JSON.stringify({
+        room: {
+          roomName: "Legacy Room",
+          width: 500,
+          height: 400,
+          interactables: [{ id: "legacy-note", name: "Legacy Note", x: 5, y: 6, width: 50, height: 20, color: "#fff", available: true, visible: true }],
+        },
+      }),
+      serverTimeUtc: new Date().toISOString(),
+    };
+
+    useGameStore.getState().applySnapshot(snapshot);
+    const state = useGameStore.getState();
+
+    expect(state.state.room.hotspots[0].id).toBe("legacy-note");
+    expect(state.state.room.hotspots[0].interactive).toBe(true);
   });
 
   it("ignores stale diff sequence and applies newer diff", () => {
@@ -57,10 +97,7 @@ describe("gameStore", () => {
 
     expect(state.lastDiffSequence).toBe(2);
     expect(state.sessionVersion).toBe(3);
-    expect(state.state.messages).toEqual([
-      "Join a session to start receiving server state diffs.",
-      "new",
-    ]);
+    expect(state.state.messages).toEqual(["Join a session to start receiving server state diffs.", "new"]);
   });
 
   it("resets to initial state", () => {
@@ -72,7 +109,7 @@ describe("gameStore", () => {
     expect(state.state).toEqual(initialGameData);
   });
 
-  it("applies inventory and room patch from diff", () => {
+  it("applies inventory and room mutation patches from diff", () => {
     const diff: StateDiffEnvelope = {
       sessionVersion: 2,
       diffSequence: 2,
@@ -84,13 +121,8 @@ describe("gameStore", () => {
       statePatch: {
         inventory: [{ id: "inv-key", label: "Rusty Key", quantity: 2 }],
         room: {
-          interactables: [
-            {
-              id: "locked-chest",
-              available: false,
-              visible: false,
-            },
-          ],
+          objectStates: [{ id: "locked-chest", available: false, visible: false, locked: true, interactive: false }],
+          hotspots: [{ id: "locked-chest", targetableItemIds: ["inv-key"], targetableModes: ["use"] }],
         },
       },
     };
@@ -99,9 +131,10 @@ describe("gameStore", () => {
     const state = useGameStore.getState();
 
     expect(state.state.inventory).toEqual([{ id: "inv-key", label: "Rusty Key", quantity: 2 }]);
-    const chest = state.state.room.interactables.find((entry) => entry.id === "locked-chest");
+    const chest = state.state.room.hotspots.find((entry) => entry.id === "locked-chest");
     expect(chest?.available).toBe(false);
     expect(chest?.visible).toBe(false);
+    expect(chest?.interactive).toBe(false);
   });
 
   it("flags non-message diffs without patch for snapshot resync", () => {

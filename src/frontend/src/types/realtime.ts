@@ -15,6 +15,56 @@ export interface StatePatchEnvelope {
     roomName?: string;
     width?: number;
     height?: number;
+    backgroundColor?: string;
+    assets?: Array<{
+      id: string;
+      kind?: "background" | "sprite" | "overlay";
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      zIndex?: number;
+      visible?: boolean;
+      opacity?: number;
+      color?: string;
+      assetUrl?: string;
+      objectId?: string;
+    }>;
+    layers?: Array<{
+      id: string;
+      name?: string;
+      zIndex?: number;
+      visible?: boolean;
+      opacity?: number;
+      color?: string;
+      assetId?: string;
+      objectId?: string;
+    }>;
+    hotspots?: Array<{
+      id: string;
+      name?: string;
+      x?: number;
+      y?: number;
+      width?: number;
+      height?: number;
+      color?: string;
+      available?: boolean;
+      visible?: boolean;
+      locked?: boolean;
+      interactive?: boolean;
+      hitArea?: "rect" | "ellipse";
+      layerId?: string;
+      objectId?: string;
+      targetableItemIds?: string[];
+      targetableModes?: Array<"use" | "combine" | "inspect" | "pickup">;
+    }>;
+    objectStates?: Array<{
+      id: string;
+      visible?: boolean;
+      available?: boolean;
+      locked?: boolean;
+      interactive?: boolean;
+    }>;
     interactables?: Array<{
       id: string;
       name?: string;
@@ -26,6 +76,8 @@ export interface StatePatchEnvelope {
       available?: boolean;
       visible?: boolean;
       assetUrl?: string;
+      locked?: boolean;
+      interactive?: boolean;
     }>;
   };
   inventory?: Array<string | { id?: string; label?: string; name?: string; quantity?: number }>;

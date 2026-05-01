@@ -30,6 +30,20 @@ const toMessage = (error: unknown): string => {
 const toRecord = (error: unknown): Record<string, unknown> | null =>
   error && typeof error === "object" ? (error as Record<string, unknown>) : null;
 
+const parseStructuredPayload = (message: string): Record<string, unknown> | null => {
+  const trimmed = message.trim();
+  if (!trimmed.startsWith("{")) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+};
+
 const parseRetryAfterMs = (record: Record<string, unknown> | null, message: string): number | undefined => {
   const directMs = record?.retryAfterMs;
   if (typeof directMs === "number" && Number.isFinite(directMs)) {
@@ -65,14 +79,19 @@ const parsePolicyName = (record: Record<string, unknown> | null, message: string
 };
 
 export const parseActionError = (error: unknown, actionKey?: string): ActionError => {
-  const record = toRecord(error);
-  const message = toMessage(error);
-  const normalized = message.toLowerCase();
+  const directRecord = toRecord(error);
+  const rawMessage = toMessage(error);
+  const payloadRecord = parseStructuredPayload(rawMessage);
+  const record = payloadRecord ?? directRecord;
+  const messageField = typeof record?.message === "string" && record.message.trim().length > 0 ? record.message : rawMessage;
+  const normalized = messageField.toLowerCase();
+  const code = typeof record?.code === "string" ? record.code.toLowerCase() : null;
 
-  const retryAfterMs = parseRetryAfterMs(record, message);
-  const policyName = parsePolicyName(record, message);
+  const retryAfterMs = parseRetryAfterMs(record, messageField);
+  const policyName = parsePolicyName(record, messageField);
 
   const isRateLimited =
+    code === "rate_limited" ||
     (normalized.includes("rate") && normalized.includes("limit")) ||
     normalized.includes("too many") ||
     normalized.includes("429") ||
@@ -81,7 +100,7 @@ export const parseActionError = (error: unknown, actionKey?: string): ActionErro
   if (isRateLimited) {
     return {
       source: "server-rate-limit",
-      message,
+      message: messageField,
       retryAfterMs,
       policyName,
       actionKey,
@@ -91,14 +110,14 @@ export const parseActionError = (error: unknown, actionKey?: string): ActionErro
   if (normalized.includes("network") || normalized.includes("connection") || normalized.includes("timeout")) {
     return {
       source: "network",
-      message,
+      message: messageField,
       actionKey,
     };
   }
 
   return {
     source: "server",
-    message,
+    message: messageField,
     retryAfterMs,
     policyName,
     actionKey,

@@ -3,6 +3,7 @@ using EscapeRoom.Infrastructure.Data;
 using EscapeRoom.Infrastructure.Seeding;
 using EscapeRoom.Realtime.Hubs;
 using EscapeRoom.Realtime.Presence;
+using EscapeRoom.Realtime.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
@@ -20,6 +21,8 @@ builder.Services.AddSwaggerGen();
 builder.Services.AddSignalR();
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<IPlayerPresenceTracker, InMemoryPlayerPresenceTracker>();
+builder.Services.Configure<ActionRateLimitOptions>(builder.Configuration.GetSection(ActionRateLimitOptions.SectionName));
+builder.Services.AddSingleton<IActionRateLimiter, InMemoryActionRateLimiter>();
 
 builder.Services.AddInfrastructure(builder.Configuration);
 

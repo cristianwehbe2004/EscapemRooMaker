@@ -349,7 +349,8 @@ const PlayerPage: React.FC = () => {
             void handleInspect(targetId);
           }}
           onPickup={(targetId) => submitAction("pickup", targetId)}
-          highlightedTargetId={inventoryInteractionMode === "use" ? selectedInventoryItemId : null}
+          selectedInventoryItemId={selectedInventoryItemId}
+          interactionMode={inventoryInteractionMode}
         />
         <div className="flex flex-col gap-4">
           <InventoryPanel

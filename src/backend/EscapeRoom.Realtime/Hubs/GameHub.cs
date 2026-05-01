@@ -5,6 +5,8 @@ using EscapeRoom.Application.Triggering;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using EscapeRoom.Realtime.Presence;
+using EscapeRoom.Realtime.RateLimiting;
+using System.Text.Json;
 
 namespace EscapeRoom.Realtime.Hubs;
 
@@ -13,7 +15,8 @@ public class GameHub(
     ISessionActionProcessor sessionActionProcessor,
     ISessionStateStore sessionStateStore,
     IPlayerPresenceTracker playerPresenceTracker,
-    IGmPanelQueryService gmPanelQueryService) : Hub
+    IGmPanelQueryService gmPanelQueryService,
+    IActionRateLimiter actionRateLimiter) : Hub
 {
     public Task Ping() => Clients.Caller.SendAsync("Pong", DateTime.UtcNow);
 
@@ -81,6 +84,13 @@ public class GameHub(
         if (string.IsNullOrWhiteSpace(action.Actor))
         {
             action.Actor = ResolveActor();
+        }
+
+        var rateLimitDecision = actionRateLimiter.Evaluate(sessionId, action);
+        if (!rateLimitDecision.Allowed)
+        {
+            var error = ActionRateLimitError.FromDecision(rateLimitDecision, action);
+            throw new HubException(JsonSerializer.Serialize(error));
         }
 
         var diff = await sessionActionProcessor.ProcessActionAsync(sessionId, action, cancellationToken);
