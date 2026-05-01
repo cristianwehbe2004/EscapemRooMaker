@@ -1,0 +1,46 @@
+  Determining projects to restore...
+  All projects are up-to-date for restore.
+  EscapeRoom.Domain -> /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.Domain/bin/Debug/net10.0/EscapeRoom.Domain.dll
+  EscapeRoom.Application -> /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.Application/bin/Debug/net10.0/EscapeRoom.Application.dll
+  EscapeRoom.TriggerEngine -> /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.TriggerEngine/bin/Debug/net10.0/EscapeRoom.TriggerEngine.dll
+  EscapeRoom.Tests.Unit -> /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.Tests.Unit/bin/Debug/net10.0/EscapeRoom.Tests.Unit.dll
+Test run for /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.Tests.Unit/bin/Debug/net10.0/EscapeRoom.Tests.Unit.dll (.NETCoreApp,Version=v10.0)
+VSTest version 18.0.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+  Failed EscapeRoom.Tests.Unit.TriggerEngine.Evaluation.TopologicalSorterTests.Sort_ShouldIgnoreCaseForNodeIds [165 ms]
+  Error Message:
+   Expected sorted {"Parent", "child"} to contain items {"Parent", "Child"} in order, but "Child" (index 1) did not appear (in the right order).
+  Stack Trace:
+     at FluentAssertions.Collections.GenericCollectionAssertions`3.ContainInOrder(IEnumerable`1 expected, String because, Object[] becauseArgs)
+   at FluentAssertions.Collections.GenericCollectionAssertions`3.ContainInOrder(T[] expected)
+   at EscapeRoom.Tests.Unit.TriggerEngine.Evaluation.TopologicalSorterTests.Sort_ShouldIgnoreCaseForNodeIds() in /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.Tests.Unit/TriggerEngine/Evaluation/TopologicalSorterTests.cs:line 164
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed EscapeRoom.Tests.Unit.TriggerEngine.Validation.TriggerGraphValidatorTests.Validate_ShouldIgnoreCaseForNodeIds [1 ms]
+  Error Message:
+   System.ArgumentException : An item with the same key has already been added. Key: node1
+  Stack Trace:
+     at System.Collections.Generic.Dictionary`2.TryInsert(TKey key, TValue value, InsertionBehavior behavior)
+   at System.Collections.Generic.Dictionary`2.Add(TKey key, TValue value)
+   at System.Linq.Enumerable.SpanToDictionary[TSource,TKey,TElement](ReadOnlySpan`1 source, Func`2 keySelector, Func`2 elementSelector, IEqualityComparer`1 comparer)
+   at System.Linq.Enumerable.ToDictionary[TSource,TKey,TElement](IEnumerable`1 source, Func`2 keySelector, Func`2 elementSelector, IEqualityComparer`1 comparer)
+   at EscapeRoom.TriggerEngine.Validation.TriggerGraphValidator.Validate(TriggerGraphDefinition graph) in /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.TriggerEngine/Validation/TriggerGraphValidator.cs:line 42
+   at EscapeRoom.Tests.Unit.TriggerEngine.Validation.TriggerGraphValidatorTests.Validate_ShouldIgnoreCaseForNodeIds() in /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.Tests.Unit/TriggerEngine/Validation/TriggerGraphValidatorTests.cs:line 193
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+  Failed EscapeRoom.Tests.Unit.TriggerEngine.Validation.TriggerGraphValidatorTests.Validate_ShouldRejectDuplicateNodeIds [4 ms]
+  Error Message:
+   System.ArgumentException : An item with the same key has already been added. Key: duplicate
+  Stack Trace:
+     at System.Collections.Generic.Dictionary`2.TryInsert(TKey key, TValue value, InsertionBehavior behavior)
+   at System.Collections.Generic.Dictionary`2.Add(TKey key, TValue value)
+   at System.Linq.Enumerable.SpanToDictionary[TSource,TKey,TElement](ReadOnlySpan`1 source, Func`2 keySelector, Func`2 elementSelector, IEqualityComparer`1 comparer)
+   at System.Linq.Enumerable.ToDictionary[TSource,TKey,TElement](IEnumerable`1 source, Func`2 keySelector, Func`2 elementSelector, IEqualityComparer`1 comparer)
+   at EscapeRoom.TriggerEngine.Validation.TriggerGraphValidator.Validate(TriggerGraphDefinition graph) in /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.TriggerEngine/Validation/TriggerGraphValidator.cs:line 42
+   at EscapeRoom.Tests.Unit.TriggerEngine.Validation.TriggerGraphValidatorTests.Validate_ShouldRejectDuplicateNodeIds() in /Users/guenayfer/EscapeRoom/src/backend/EscapeRoom.Tests.Unit/TriggerEngine/Validation/TriggerGraphValidatorTests.cs:line 60
+   at System.Reflection.MethodBaseInvoker.InterpretedInvoke_Method(Object obj, IntPtr* args)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+
+Failed!  - Failed:     3, Passed:    61, Skipped:     0, Total:    64, Duration: 208 ms - EscapeRoom.Tests.Unit.dll (net10.0)

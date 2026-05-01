@@ -1,0 +1,10 @@
+<Solution>
+  <Project Path="EscapeRoom.Api/EscapeRoom.Api.csproj" />
+  <Project Path="EscapeRoom.Application/EscapeRoom.Application.csproj" />
+  <Project Path="EscapeRoom.Domain/EscapeRoom.Domain.csproj" />
+  <Project Path="EscapeRoom.Infrastructure/EscapeRoom.Infrastructure.csproj" />
+  <Project Path="EscapeRoom.Realtime/EscapeRoom.Realtime.csproj" />
+  <Project Path="EscapeRoom.TriggerEngine/EscapeRoom.TriggerEngine.csproj" />
+  <Project Path="EscapeRoom.Tests.Unit/EscapeRoom.Tests.Unit.csproj" />
+  <Project Path="EscapeRoom.Tests.Integration/EscapeRoom.Tests.Integration.csproj" />
+</Solution>
