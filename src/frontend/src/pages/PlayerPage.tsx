@@ -5,9 +5,10 @@ import InventoryPanel, { InventoryInteractionMode } from "../components/ui/Inven
 import ReconnectBanner from "../components/ui/ReconnectBanner";
 import { useActionCooldown } from "../hooks/useActionCooldown";
 import { GameRealtimeClient } from "../realtime/gameRealtimeClient";
+import { runSessionRecovery } from "../realtime/recoveryController";
 import { diffNeedsSnapshotResync, useGameStore } from "../store/gameStore";
 import { ActionError, parseActionError } from "../types/actionError";
-import { PlayerActionEnvelope } from "../types/realtime";
+import { InventoryCombineActionPayload, InventoryUseActionPayload, PlayerActionEnvelope } from "../types/realtime";
 
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5000";
 
@@ -55,18 +56,6 @@ const PlayerPage: React.FC = () => {
     }, 2200);
   }, []);
 
-  const runSnapshotRecovery = useCallback(
-    async (client: GameRealtimeClient, activeSessionId: string) => {
-      setSyncState("recovering");
-      const snapshot = await client.requestSnapshot(activeSessionId);
-      applySnapshot(snapshot);
-      setReplayedDiffCount(0);
-      setSyncState("synced");
-      showSyncedToast();
-    },
-    [applySnapshot, setSyncState, showSyncedToast]
-  );
-
   const client = useMemo(
     () =>
       new GameRealtimeClient(
@@ -100,27 +89,25 @@ const PlayerPage: React.FC = () => {
             }
 
             try {
-              setSyncState("recovering");
-              const recoverResult = await runtimeClient.recoverSession(activeSessionId, lastKnownVersion);
-              setReplayedDiffCount(recoverResult.replayedDiffCount);
-
-              if (recoverResult.replayedDiffCount > 0) {
-                setSyncState("replaying");
-                window.setTimeout(() => {
-                  setSyncState("synced");
-                  showSyncedToast();
-                }, 650);
-              } else {
-                await runSnapshotRecovery(runtimeClient, activeSessionId);
-              }
+              await runSessionRecovery({
+                sessionId: activeSessionId,
+                lastKnownVersion,
+                setSyncState,
+                setReplayedDiffCount,
+                setConnectionError,
+                recoverSession: runtimeClient.recoverSession.bind(runtimeClient),
+                requestSnapshot: runtimeClient.requestSnapshot.bind(runtimeClient),
+                applySnapshot,
+                onSynced: showSyncedToast,
+              });
             } catch {
-              await runSnapshotRecovery(runtimeClient, activeSessionId);
+              // Connection error is set by recovery controller when fallback snapshot fails.
             }
           },
           onDisconnected: () => setConnectionStatus({ connected: false }),
         }
       ),
-    [applyDiff, applySnapshot, lastKnownVersion, runSnapshotRecovery, setConnectionStatus, setSyncState, showSyncedToast]
+    [applyDiff, applySnapshot, lastKnownVersion, setConnectionStatus, setSyncState, showSyncedToast]
   );
 
   useEffect(() => {
@@ -148,6 +135,11 @@ const PlayerPage: React.FC = () => {
       .sort((a, b) => b.remainingMs - a.remainingMs)
       .slice(0, 4);
   }, [cooldownTick, getRemainingMs, trackedCooldownKeys]);
+
+  const selectedInventoryItem = useMemo(
+    () => state.inventory.find((item) => item.id === selectedInventoryItemId) ?? null,
+    [selectedInventoryItemId, state.inventory]
+  );
 
   useEffect(() => {
     setTrackedCooldownKeys((current) => {
@@ -182,6 +174,16 @@ const PlayerPage: React.FC = () => {
         setActionError(parseActionError(error));
       });
   }, [applySnapshot, client, connected, pendingResyncToken, sessionId, setSyncState]);
+
+  useEffect(() => {
+    if (!selectedInventoryItemId) {
+      return;
+    }
+
+    if (!state.inventory.some((item) => item.id === selectedInventoryItemId)) {
+      clearInventoryIntent();
+    }
+  }, [clearInventoryIntent, selectedInventoryItemId, state.inventory]);
 
   useEffect(() => {
     return () => {
@@ -260,8 +262,11 @@ const PlayerPage: React.FC = () => {
         });
       }
     } catch (error) {
-      setActionError(parseActionError(error, cooldownKey));
-      setConnectionError(error instanceof Error ? error.message : "Failed to submit action.");
+      const parsedError = parseActionError(error, cooldownKey);
+      setActionError(parsedError);
+      if (parsedError.source === "network") {
+        setConnectionError(parsedError.message);
+      }
     } finally {
       setPendingActionLabel(null);
     }
@@ -278,13 +283,36 @@ const PlayerPage: React.FC = () => {
       return;
     }
 
+    const selectedItem = selectedInventoryItem;
+    if (selectedItem?.status !== "ready") {
+      setActionError({
+        source: "local-cooldown",
+        message: `${selectedItem?.label ?? "Selected item"} is not usable right now.`,
+      });
+      return;
+    }
+
+    if (
+      selectedItem?.combinableWithIds &&
+      selectedItem.combinableWithIds.length > 0 &&
+      !selectedItem.combinableWithIds.includes(itemId)
+    ) {
+      setActionError({
+        source: "local-cooldown",
+        message: `${selectedItem.label} cannot be combined with that item.`,
+      });
+      return;
+    }
+
+    const payload: InventoryCombineActionPayload = {
+      primaryItemId: selectedInventoryItemId,
+      secondaryItemId: itemId,
+    };
+
     await submitAction(
       "inventory.combine",
       itemId,
-      {
-        primaryItemId: selectedInventoryItemId,
-        secondaryItemId: itemId,
-      },
+      payload,
       {
         cooldownKey: `inventory.combine:${selectedInventoryItemId}:${itemId}`,
         afterSuccess: () => {
@@ -296,12 +324,35 @@ const PlayerPage: React.FC = () => {
 
   const handleInspect = async (targetId: string) => {
     if (inventoryInteractionMode === "use" && selectedInventoryItemId) {
+      const selectedItem = selectedInventoryItem;
+      if (selectedItem?.status !== "ready") {
+        setActionError({
+          source: "local-cooldown",
+          message: `${selectedItem?.label ?? "Selected item"} is not usable right now.`,
+        });
+        return;
+      }
+
+      if (
+        selectedItem?.usableTargetIds &&
+        selectedItem.usableTargetIds.length > 0 &&
+        !selectedItem.usableTargetIds.includes(targetId)
+      ) {
+        setActionError({
+          source: "local-cooldown",
+          message: `${selectedItem.label} cannot be used on that target.`,
+        });
+        return;
+      }
+
+      const payload: InventoryUseActionPayload = {
+        itemId: selectedInventoryItemId,
+      };
+
       await submitAction(
         "inventory.use",
         targetId,
-        {
-          itemId: selectedInventoryItemId,
-        },
+        payload,
         {
           cooldownKey: `inventory.use:${selectedInventoryItemId}:${targetId}`,
           afterSuccess: () => {
@@ -350,6 +401,7 @@ const PlayerPage: React.FC = () => {
           }}
           onPickup={(targetId) => submitAction("pickup", targetId)}
           selectedInventoryItemId={selectedInventoryItemId}
+          selectedInventoryItem={selectedInventoryItem}
           interactionMode={inventoryInteractionMode}
         />
         <div className="flex flex-col gap-4">
@@ -367,6 +419,17 @@ const PlayerPage: React.FC = () => {
                   message: "Select an inventory item first.",
                 });
                 return;
+              }
+
+              if (selectedInventoryItemId && mode !== "none") {
+                const selectedItem = state.inventory.find((item) => item.id === selectedInventoryItemId);
+                if (selectedItem?.status !== "ready") {
+                  setActionError({
+                    source: "local-cooldown",
+                    message: `${selectedItem?.label ?? "Selected item"} is not usable right now.`,
+                  });
+                  return;
+                }
               }
 
               setInventoryInteractionMode(mode);

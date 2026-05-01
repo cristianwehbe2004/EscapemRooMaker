@@ -5,6 +5,7 @@ export interface ActionError {
   message: string;
   retryAfterMs?: number;
   policyName?: string;
+  policyScope?: string;
   actionKey?: string;
 }
 
@@ -89,6 +90,10 @@ export const parseActionError = (error: unknown, actionKey?: string): ActionErro
 
   const retryAfterMs = parseRetryAfterMs(record, messageField);
   const policyName = parsePolicyName(record, messageField);
+  const policyScope =
+    typeof record?.policyScope === "string" && record.policyScope.trim().length > 0 ? record.policyScope : undefined;
+  const actionKeyFromPayload =
+    typeof record?.actionKey === "string" && record.actionKey.trim().length > 0 ? record.actionKey : undefined;
 
   const isRateLimited =
     code === "rate_limited" ||
@@ -103,7 +108,8 @@ export const parseActionError = (error: unknown, actionKey?: string): ActionErro
       message: messageField,
       retryAfterMs,
       policyName,
-      actionKey,
+      policyScope,
+      actionKey: actionKeyFromPayload ?? actionKey,
     };
   }
 
@@ -111,7 +117,7 @@ export const parseActionError = (error: unknown, actionKey?: string): ActionErro
     return {
       source: "network",
       message: messageField,
-      actionKey,
+      actionKey: actionKeyFromPayload ?? actionKey,
     };
   }
 
@@ -120,6 +126,7 @@ export const parseActionError = (error: unknown, actionKey?: string): ActionErro
     message: messageField,
     retryAfterMs,
     policyName,
-    actionKey,
+    policyScope,
+    actionKey: actionKeyFromPayload ?? actionKey,
   };
 };

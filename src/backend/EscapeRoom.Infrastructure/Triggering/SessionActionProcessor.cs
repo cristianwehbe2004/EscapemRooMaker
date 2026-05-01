@@ -91,6 +91,10 @@ public class SessionActionProcessor(
             var emittedMessages = evaluation.EmittedMessages.ToList();
             var appliedEffects = evaluation.AppliedEffects.ToList();
             ApplyBuiltInGmEffects(action, changedEntities, emittedMessages, appliedEffects);
+            var (statePatch, fullStateJson) = StateDiffPayloadBuilder.Build(
+                evaluation.UpdatedStateJson,
+                action.ActionType,
+                changedEntities);
 
             var diff = new StateDiffEnvelope
             {
@@ -99,7 +103,9 @@ public class SessionActionProcessor(
                 EmittedAtUtc = DateTime.UtcNow,
                 ChangedEntities = changedEntities,
                 EmittedMessages = emittedMessages,
-                AppliedEffects = appliedEffects
+                AppliedEffects = appliedEffects,
+                StatePatch = statePatch,
+                FullStateJson = fullStateJson
             };
 
             diff.DiffSequence = await sessionStateStore.GetNextDiffSequenceAsync(sessionId, cancellationToken);

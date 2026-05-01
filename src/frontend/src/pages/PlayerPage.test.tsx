@@ -10,7 +10,10 @@ const mockRecoverSession = jest.fn();
 const mockRequestSnapshot = jest.fn();
 
 jest.mock("../realtime/gameRealtimeClient", () => ({
-  GameRealtimeClient: function MockGameRealtimeClient() {
+  GameRealtimeClient: function MockGameRealtimeClient(
+    _options: unknown,
+    _handlers: unknown
+  ) {
     return {
       start: mockStart,
       stop: mockStop,
@@ -115,4 +118,37 @@ describe("PlayerPage", () => {
 
     expect(screen.getByText(/reconnecting to the session/i)).toBeInTheDocument();
   });
+
+  it("routes structured server rate-limit errors to action feedback only", async () => {
+    mockSubmitAction.mockRejectedValue(
+      new Error(
+        JSON.stringify({
+          code: "rate_limited",
+          message: "Action rate limited.",
+          retryAfterMs: 1200,
+          policyName: "player-action-default",
+        })
+      )
+    );
+
+    render(<PlayerPage />);
+
+    fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
+      target: { value: "session-123" },
+    });
+    fireEvent.click(screen.getByText("Join Session"));
+
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalledWith("session-123");
+    });
+
+    fireEvent.click(screen.getByText("Inspect Desk Note"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Action rate limited.")).toBeInTheDocument();
+      expect(screen.getByText(/source: server rate limit/i)).toBeInTheDocument();
+      expect(screen.queryByText(/code\":\"rate_limited/i)).not.toBeInTheDocument();
+    });
+  });
+
 });

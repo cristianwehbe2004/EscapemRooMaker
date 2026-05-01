@@ -86,7 +86,11 @@ public class GameHub(
             action.Actor = ResolveActor();
         }
 
-        var rateLimitDecision = actionRateLimiter.Evaluate(sessionId, action);
+        var rateLimitDecision = actionRateLimiter.Evaluate(sessionId, action, new ActionRateLimitContext
+        {
+            PolicyScope = ResolvePolicyScope(action),
+            ActorRole = ResolveActorRole()
+        });
         if (!rateLimitDecision.Allowed)
         {
             var error = ActionRateLimitError.FromDecision(rateLimitDecision, action);
@@ -238,6 +242,33 @@ public class GameHub(
             ?? Context.User?.FindFirstValue(ClaimTypes.Email)
             ?? Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? ResolveActor();
+
+    private string ResolveActorRole()
+    {
+        var roles = Context.User?.FindAll(ClaimTypes.Role).Select(x => x.Value).ToList() ?? [];
+        if (roles.Any(role => role.Equals("Admin", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "admin";
+        }
+
+        if (roles.Any(role => role.Equals("GM", StringComparison.OrdinalIgnoreCase)))
+        {
+            return "gm";
+        }
+
+        return "player";
+    }
+
+    private string ResolvePolicyScope(PlayerActionEnvelope action)
+    {
+        if (action.ActionType.Trim().StartsWith("gm.", StringComparison.OrdinalIgnoreCase))
+        {
+            return "gm";
+        }
+
+        var role = ResolveActorRole();
+        return role is "gm" or "admin" ? "gm" : "player";
+    }
 
     private PlayerActionEnvelope BuildGmAction(
         string actionType,

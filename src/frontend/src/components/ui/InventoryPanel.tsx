@@ -24,6 +24,13 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
 }) => {
   const selectedItem = items.find((item) => item.id === selectedItemId) ?? null;
   const canActOnSelected = Boolean(selectedItem) && !disabled;
+  const selectedItemReady = selectedItem?.status === "ready";
+  const canUseSelected =
+    canActOnSelected && selectedItemReady && (!selectedItem?.usableTargetIds || selectedItem.usableTargetIds.length > 0);
+  const canCombineSelected =
+    canActOnSelected &&
+    selectedItemReady &&
+    (!selectedItem?.combinableWithIds || selectedItem.combinableWithIds.length > 0);
 
   return (
     <aside className="rounded border border-slate-700 bg-slate-900/95 p-4">
@@ -35,18 +42,20 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
       <div className="mb-3 space-y-2 text-xs text-slate-300">
         <p>Selected: {selectedItem?.label ?? "None"}</p>
         <p>Mode: {interactionMode}</p>
+        {selectedItem && <p>Type: {selectedItem.type}</p>}
+        {selectedItem && <p>Status: {selectedItem.status}</p>}
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
         <button
-          disabled={!canActOnSelected}
+          disabled={!canUseSelected}
           onClick={() => onSetInteractionMode(interactionMode === "use" ? "none" : "use")}
           className="rounded bg-indigo-700 px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
           {interactionMode === "use" ? "Cancel Use" : "Use"}
         </button>
         <button
-          disabled={!canActOnSelected}
+          disabled={!canCombineSelected}
           onClick={() => onSetInteractionMode(interactionMode === "combine" ? "none" : "combine")}
           className="rounded bg-amber-700 px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
@@ -78,6 +87,12 @@ const InventoryPanel: React.FC<InventoryPanelProps> = ({
               >
                 <span>{item.label}</span>
                 {item.quantity > 1 && <span className="ml-2 text-xs text-slate-300">x{item.quantity}</span>}
+                <span className="ml-2 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-200">
+                  {item.type}
+                </span>
+                <span className="ml-2 rounded bg-slate-700 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-slate-200">
+                  {item.status}
+                </span>
               </button>
             </li>
           ))}

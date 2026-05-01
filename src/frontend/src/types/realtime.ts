@@ -10,6 +10,18 @@ export interface StateDiffEnvelope {
   fullStateJson?: string;
 }
 
+export interface InventoryItemPatch {
+  id?: string;
+  label?: string;
+  name?: string;
+  quantity?: number;
+  type?: string;
+  stack?: boolean;
+  status?: string;
+  usableTargetIds?: string[];
+  combinableWithIds?: string[];
+}
+
 export interface StatePatchEnvelope {
   room?: {
     roomName?: string;
@@ -80,7 +92,7 @@ export interface StatePatchEnvelope {
       interactive?: boolean;
     }>;
   };
-  inventory?: Array<string | { id?: string; label?: string; name?: string; quantity?: number }>;
+  inventory?: Array<string | InventoryItemPatch>;
   messages?: string[];
 }
 
@@ -92,11 +104,20 @@ export interface SessionSnapshotEnvelope {
   playerPresence?: PlayerPresenceEvent[];
 }
 
-export interface PlayerActionEnvelope {
+export interface InventoryUseActionPayload extends Record<string, unknown> {
+  itemId: string;
+}
+
+export interface InventoryCombineActionPayload extends Record<string, unknown> {
+  primaryItemId: string;
+  secondaryItemId: string;
+}
+
+export interface PlayerActionEnvelope<TPayload extends Record<string, unknown> = Record<string, unknown>> {
   actionType: string;
   actor: string;
   target?: string;
-  payload: Record<string, unknown>;
+  payload: TPayload;
   clientActionId: string;
   timestampUtc: string;
 }

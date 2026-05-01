@@ -47,7 +47,18 @@ describe("gameStore", () => {
     expect(state.sessionVersion).toBe(5);
     expect(state.state.room.roomName).toBe("Basement");
     expect(state.state.room.hotspots).toHaveLength(1);
-    expect(state.state.inventory).toEqual([{ id: "key-1", label: "Key", quantity: 1 }]);
+    expect(state.state.inventory).toEqual([
+      {
+        id: "key-1",
+        label: "Key",
+        quantity: 1,
+        type: "generic",
+        stack: false,
+        status: "ready",
+        usableTargetIds: undefined,
+        combinableWithIds: undefined,
+      },
+    ]);
   });
 
   it("maps legacy interactables from snapshot into hotspots", () => {
@@ -130,7 +141,18 @@ describe("gameStore", () => {
     useGameStore.getState().applyDiff(diff);
     const state = useGameStore.getState();
 
-    expect(state.state.inventory).toEqual([{ id: "inv-key", label: "Rusty Key", quantity: 2 }]);
+    expect(state.state.inventory).toEqual([
+      {
+        id: "inv-key",
+        label: "Rusty Key",
+        quantity: 2,
+        type: "generic",
+        stack: true,
+        status: "ready",
+        usableTargetIds: undefined,
+        combinableWithIds: undefined,
+      },
+    ]);
     const chest = state.state.room.hotspots.find((entry) => entry.id === "locked-chest");
     expect(chest?.available).toBe(false);
     expect(chest?.visible).toBe(false);
@@ -156,5 +178,49 @@ describe("gameStore", () => {
 
     expect(diffNeedsSnapshotResync(messageOnly)).toBe(false);
     expect(diffNeedsSnapshotResync(stateOnly)).toBe(true);
+  });
+
+  it("normalizes legacy and rich inventory payloads", () => {
+    const snapshot: SessionSnapshotEnvelope = {
+      sessionId: "session-rich-inventory",
+      sessionVersion: 6,
+      stateJson: JSON.stringify({
+        room: initialGameData.room,
+        inventory: [
+          "Old Key",
+          {
+            id: "inv-crowbar",
+            label: "Crowbar",
+            quantity: 1,
+            type: "tool",
+            stack: false,
+            status: "ready",
+            usableTargetIds: ["locked-chest"],
+            combinableWithIds: ["inv-tape"],
+          },
+        ],
+      }),
+      serverTimeUtc: new Date().toISOString(),
+    };
+
+    useGameStore.getState().applySnapshot(snapshot);
+    const state = useGameStore.getState();
+
+    expect(state.state.inventory[0]).toMatchObject({
+      label: "Old Key",
+      quantity: 1,
+      type: "generic",
+      status: "ready",
+    });
+    expect(state.state.inventory[1]).toEqual({
+      id: "inv-crowbar",
+      label: "Crowbar",
+      quantity: 1,
+      type: "tool",
+      stack: false,
+      status: "ready",
+      usableTargetIds: ["locked-chest"],
+      combinableWithIds: ["inv-tape"],
+    });
   });
 });

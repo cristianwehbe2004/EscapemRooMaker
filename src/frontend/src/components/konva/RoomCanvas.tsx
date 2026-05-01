@@ -1,13 +1,14 @@
 import React from "react";
 import { Layer, Rect, Stage, Text } from "react-konva";
 import { InventoryInteractionMode } from "../ui/InventoryPanel";
-import { RoomAsset, RoomHotspot, RoomLayer, RoomState } from "../../types/gameState";
+import { InventoryItem, RoomAsset, RoomHotspot, RoomLayer, RoomState } from "../../types/gameState";
 
 type RoomCanvasProps = {
   room: RoomState;
   onInspect: (targetId: string) => void;
   onPickup: (targetId: string) => void;
   selectedInventoryItemId?: string | null;
+  selectedInventoryItem?: InventoryItem | null;
   interactionMode?: InventoryInteractionMode;
 };
 
@@ -43,7 +44,8 @@ const isHotspotInteractable = (hotspot: RoomHotspot): boolean => {
 const isTargetableForMode = (
   hotspot: RoomHotspot,
   interactionMode: InventoryInteractionMode,
-  selectedInventoryItemId: string | null
+  selectedInventoryItemId: string | null,
+  selectedInventoryItem: InventoryItem | null
 ): boolean => {
   if (!isHotspotInteractable(hotspot)) {
     return false;
@@ -57,6 +59,10 @@ const isTargetableForMode = (
     return false;
   }
 
+  if (selectedInventoryItem?.status !== "ready") {
+    return false;
+  }
+
   const modeAllowed =
     !hotspot.targetableModes || hotspot.targetableModes.length === 0
       ? true
@@ -67,7 +73,11 @@ const isTargetableForMode = (
   }
 
   if (!hotspot.targetableItemIds || hotspot.targetableItemIds.length === 0) {
-    return true;
+    if (interactionMode !== "use" || !selectedInventoryItem?.usableTargetIds || selectedInventoryItem.usableTargetIds.length === 0) {
+      return true;
+    }
+
+    return selectedInventoryItem.usableTargetIds.includes(hotspot.id);
   }
 
   return hotspot.targetableItemIds.includes(selectedInventoryItemId);
@@ -80,6 +90,7 @@ const RoomCanvas: React.FC<RoomCanvasProps> = ({
   onInspect,
   onPickup,
   selectedInventoryItemId = null,
+  selectedInventoryItem = null,
   interactionMode = "none",
 }) => {
   const sortedAssets = sortByZIndex(room.assets);
@@ -122,7 +133,12 @@ const RoomCanvas: React.FC<RoomCanvasProps> = ({
           {room.hotspots
             .filter((hotspot) => hotspot.visible)
             .map((hotspot) => {
-              const targetable = isTargetableForMode(hotspot, interactionMode, selectedInventoryItemId);
+              const targetable = isTargetableForMode(
+                hotspot,
+                interactionMode,
+                selectedInventoryItemId,
+                selectedInventoryItem
+              );
               const interactable = isHotspotInteractable(hotspot);
               const isSelectionMode = interactionMode === "use" || interactionMode === "combine";
               const strokeColor =

@@ -140,8 +140,8 @@ public class GameHubTests
         var gmPanelQueryService = new Mock<IGmPanelQueryService>();
         var rateLimiter = new Mock<IActionRateLimiter>();
         rateLimiter
-            .Setup(x => x.Evaluate(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>()))
-            .Returns(new ActionRateLimitDecision(false, 1200, "player-action-default"));
+            .Setup(x => x.Evaluate(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>(), It.IsAny<ActionRateLimitContext>()))
+            .Returns(new ActionRateLimitDecision(false, 1200, "player-action-default", "player", "player:action"));
 
         var clients = new Mock<IHubCallerClients>();
         var groups = new Mock<IGroupManager>();
@@ -168,6 +168,8 @@ public class GameHubTests
         payload.Should().NotBeNull();
         payload!.Code.Should().Be("rate_limited");
         payload.PolicyName.Should().Be("player-action-default");
+        payload.PolicyScope.Should().Be("player");
+        payload.ActionKey.Should().Be("player:action");
         payload.RetryAfterMs.Should().Be(1200);
 
         processor.Verify(
@@ -175,12 +177,154 @@ public class GameHubTests
             Times.Never);
     }
 
+    [Fact]
+    public async Task RecoverSession_ShouldReturnReplayResult_WhenDiffsExist()
+    {
+        var sessionId = Guid.NewGuid();
+        var processor = new Mock<ISessionActionProcessor>();
+        var store = new Mock<ISessionStateStore>();
+        var presenceTracker = new Mock<IPlayerPresenceTracker>();
+        var gmPanelQueryService = new Mock<IGmPanelQueryService>();
+        var rateLimiter = BuildAllowingRateLimiter();
+        store.Setup(x => x.GetDiffsAfterVersionAsync(sessionId, 2, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([
+                new StateDiffEnvelope { SessionVersion = 3, DiffSequence = 3 },
+                new StateDiffEnvelope { SessionVersion = 4, DiffSequence = 4 }
+            ]);
+
+        var callerProxy = new Mock<ISingleClientProxy>();
+        callerProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var groupProxy = new Mock<IClientProxy>();
+        groupProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var clients = new Mock<IHubCallerClients>();
+        clients.SetupGet(x => x.Caller).Returns(callerProxy.Object);
+        clients.Setup(x => x.Group(It.IsAny<string>())).Returns(groupProxy.Object);
+
+        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object, rateLimiter.Object)
+        {
+            Clients = clients.Object,
+            Groups = Mock.Of<IGroupManager>(),
+            Context = Mock.Of<HubCallerContext>()
+        };
+
+        var result = await hub.RecoverSession(sessionId, 2);
+
+        result.ReplayedDiffCount.Should().Be(2);
+        result.SnapshotSent.Should().BeFalse();
+        result.CurrentVersion.Should().Be(4);
+        callerProxy.Verify(x => x.SendCoreAsync("StateDiff", It.IsAny<object?[]>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+        callerProxy.Verify(x => x.SendCoreAsync("SessionSnapshot", It.IsAny<object?[]>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecoverSession_ShouldSendSnapshot_WhenNoDiffsExist()
+    {
+        var sessionId = Guid.NewGuid();
+        var processor = new Mock<ISessionActionProcessor>();
+        var store = new Mock<ISessionStateStore>();
+        var presenceTracker = new Mock<IPlayerPresenceTracker>();
+        var gmPanelQueryService = new Mock<IGmPanelQueryService>();
+        var rateLimiter = BuildAllowingRateLimiter();
+        store.Setup(x => x.GetDiffsAfterVersionAsync(sessionId, 5, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        presenceTracker.Setup(x => x.GetSessionPresence(sessionId)).Returns([]);
+        store.Setup(x => x.GetSnapshotAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SessionSnapshotEnvelope
+            {
+                SessionId = sessionId,
+                SessionVersion = 6,
+                StateJson = "{}"
+            });
+
+        var callerProxy = new Mock<ISingleClientProxy>();
+        callerProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var groupProxy = new Mock<IClientProxy>();
+        groupProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var clients = new Mock<IHubCallerClients>();
+        clients.SetupGet(x => x.Caller).Returns(callerProxy.Object);
+        clients.Setup(x => x.Group(It.IsAny<string>())).Returns(groupProxy.Object);
+
+        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object, rateLimiter.Object)
+        {
+            Clients = clients.Object,
+            Groups = Mock.Of<IGroupManager>(),
+            Context = Mock.Of<HubCallerContext>()
+        };
+
+        var result = await hub.RecoverSession(sessionId, 5);
+
+        result.ReplayedDiffCount.Should().Be(0);
+        result.SnapshotSent.Should().BeTrue();
+        result.CurrentVersion.Should().Be(6);
+        callerProxy.Verify(x => x.SendCoreAsync("SessionSnapshot", It.IsAny<object?[]>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task SubmitGmHint_ShouldUseGmRateLimitScope()
+    {
+        var sessionId = Guid.NewGuid();
+        var processor = new Mock<ISessionActionProcessor>();
+        processor.Setup(x => x.ProcessActionAsync(sessionId, It.IsAny<PlayerActionEnvelope>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new StateDiffEnvelope { SessionVersion = 2, DiffSequence = 1 });
+
+        var store = new Mock<ISessionStateStore>();
+        var presenceTracker = new Mock<IPlayerPresenceTracker>();
+        var gmPanelQueryService = new Mock<IGmPanelQueryService>();
+        var rateLimiter = new Mock<IActionRateLimiter>();
+        rateLimiter
+            .Setup(x => x.Evaluate(
+                It.IsAny<Guid>(),
+                It.IsAny<PlayerActionEnvelope>(),
+                It.Is<ActionRateLimitContext>(context => context.PolicyScope == "gm" && context.ActorRole == "gm")))
+            .Returns(new ActionRateLimitDecision(true, 0, "gm-action-bypass", "gm", "gm:action"));
+
+        var groupProxy = new Mock<IClientProxy>();
+        groupProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var callerProxy = new Mock<ISingleClientProxy>();
+        callerProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+
+        var clients = new Mock<IHubCallerClients>();
+        clients.Setup(x => x.Group(It.IsAny<string>())).Returns(groupProxy.Object);
+        clients.SetupGet(x => x.Caller).Returns(callerProxy.Object);
+
+        var groups = new Mock<IGroupManager>();
+        var context = new Mock<HubCallerContext>();
+        context.SetupGet(x => x.ConnectionId).Returns("conn-1");
+        context.SetupGet(x => x.User).Returns(new ClaimsPrincipal(new ClaimsIdentity(
+        [
+            new Claim(ClaimTypes.NameIdentifier, "gm-user"),
+            new Claim(ClaimTypes.Role, "GM")
+        ])));
+
+        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object, rateLimiter.Object)
+        {
+            Clients = clients.Object,
+            Groups = groups.Object,
+            Context = context.Object
+        };
+
+        await hub.SubmitGmHint(sessionId, new GmHintAction { Hint = "Look up.", Scope = "session" });
+
+        rateLimiter.Verify(
+            x => x.Evaluate(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>(), It.IsAny<ActionRateLimitContext>()),
+            Times.Once);
+        processor.Verify(
+            x => x.ProcessActionAsync(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
     private static Mock<IActionRateLimiter> BuildAllowingRateLimiter()
     {
         var rateLimiter = new Mock<IActionRateLimiter>();
         rateLimiter
-            .Setup(x => x.Evaluate(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>()))
-            .Returns(new ActionRateLimitDecision(true, 0, "player-action-default"));
+            .Setup(x => x.Evaluate(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>(), It.IsAny<ActionRateLimitContext>()))
+            .Returns(new ActionRateLimitDecision(true, 0, "player-action-default", "player", "player:action"));
         return rateLimiter;
     }
 }
