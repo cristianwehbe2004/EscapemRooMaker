@@ -1,9 +1,11 @@
 using System.Security.Claims;
+using System.Text.Json;
 using EscapeRoom.Application.Realtime;
 using EscapeRoom.Application.Realtime.Contracts;
 using EscapeRoom.Application.Triggering;
 using EscapeRoom.Realtime.Hubs;
 using EscapeRoom.Realtime.Presence;
+using EscapeRoom.Realtime.RateLimiting;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
 using Moq;
@@ -23,6 +25,7 @@ public class GameHubTests
         var store = new Mock<ISessionStateStore>();
         var presenceTracker = new Mock<IPlayerPresenceTracker>();
         var gmPanelQueryService = new Mock<IGmPanelQueryService>();
+        var rateLimiter = BuildAllowingRateLimiter();
         var groupProxy = new Mock<IClientProxy>();
         groupProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
             .Returns(Task.CompletedTask);
@@ -43,7 +46,7 @@ public class GameHubTests
             new Claim(ClaimTypes.Role, "GM")
         ])));
 
-        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object)
+        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object, rateLimiter.Object)
         {
             Clients = clients.Object,
             Groups = groups.Object,
@@ -71,6 +74,7 @@ public class GameHubTests
         var store = new Mock<ISessionStateStore>();
         var presenceTracker = new Mock<IPlayerPresenceTracker>();
         var gmPanelQueryService = new Mock<IGmPanelQueryService>();
+        var rateLimiter = BuildAllowingRateLimiter();
 
         presenceTracker.Setup(x => x.TrackConnected(sessionId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
             .Returns(new PlayerPresenceEvent
@@ -112,7 +116,7 @@ public class GameHubTests
         context.SetupGet(x => x.ConnectionId).Returns("conn-1");
         context.SetupGet(x => x.User).Returns(new ClaimsPrincipal(new ClaimsIdentity()));
 
-        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object)
+        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object, rateLimiter.Object)
         {
             Clients = clients.Object,
             Groups = groups.Object,
@@ -124,5 +128,59 @@ public class GameHubTests
         ack.ReplayedDiffCount.Should().Be(2);
         ack.CurrentVersion.Should().Be(4);
         callerProxy.Verify(x => x.SendCoreAsync("StateDiff", It.IsAny<object?[]>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task SubmitAction_ShouldThrowStructuredHubException_WhenRateLimited()
+    {
+        var sessionId = Guid.NewGuid();
+        var processor = new Mock<ISessionActionProcessor>();
+        var store = new Mock<ISessionStateStore>();
+        var presenceTracker = new Mock<IPlayerPresenceTracker>();
+        var gmPanelQueryService = new Mock<IGmPanelQueryService>();
+        var rateLimiter = new Mock<IActionRateLimiter>();
+        rateLimiter
+            .Setup(x => x.Evaluate(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>()))
+            .Returns(new ActionRateLimitDecision(false, 1200, "player-action-default"));
+
+        var clients = new Mock<IHubCallerClients>();
+        var groups = new Mock<IGroupManager>();
+        var context = new Mock<HubCallerContext>();
+        context.SetupGet(x => x.ConnectionId).Returns("conn-1");
+        context.SetupGet(x => x.User).Returns(new ClaimsPrincipal(new ClaimsIdentity()));
+
+        var hub = new GameHub(processor.Object, store.Object, presenceTracker.Object, gmPanelQueryService.Object, rateLimiter.Object)
+        {
+            Clients = clients.Object,
+            Groups = groups.Object,
+            Context = context.Object
+        };
+
+        var ex = await Assert.ThrowsAsync<HubException>(() => hub.SubmitAction(sessionId, new PlayerActionEnvelope
+        {
+            ActionType = "inspect",
+            Actor = "player-1",
+            Target = "desk-note",
+            Payload = new Dictionary<string, object?>()
+        }));
+
+        var payload = JsonSerializer.Deserialize<ActionRateLimitError>(ex.Message);
+        payload.Should().NotBeNull();
+        payload!.Code.Should().Be("rate_limited");
+        payload.PolicyName.Should().Be("player-action-default");
+        payload.RetryAfterMs.Should().Be(1200);
+
+        processor.Verify(
+            x => x.ProcessActionAsync(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>(), It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    private static Mock<IActionRateLimiter> BuildAllowingRateLimiter()
+    {
+        var rateLimiter = new Mock<IActionRateLimiter>();
+        rateLimiter
+            .Setup(x => x.Evaluate(It.IsAny<Guid>(), It.IsAny<PlayerActionEnvelope>()))
+            .Returns(new ActionRateLimitDecision(true, 0, "player-action-default"));
+        return rateLimiter;
     }
 }

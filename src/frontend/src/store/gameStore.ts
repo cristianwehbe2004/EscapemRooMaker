@@ -1,37 +1,16 @@
 import { create } from "zustand";
 import { SessionSnapshotEnvelope, StateDiffEnvelope } from "../types/realtime";
+import {
+  GameStateData,
+  InventoryItem,
+  RoomAsset,
+  RoomHotspot,
+  RoomLayer,
+  RoomObjectState,
+  RoomState,
+} from "../types/gameState";
 
-export interface InventoryItem {
-  id: string;
-  label: string;
-  quantity: number;
-}
-
-export interface Interactable {
-  id: string;
-  name: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  color: string;
-  available: boolean;
-  visible?: boolean;
-  assetUrl?: string;
-}
-
-export interface RoomState {
-  roomName: string;
-  width: number;
-  height: number;
-  interactables: Interactable[];
-}
-
-export interface GameStateData {
-  room: RoomState;
-  inventory: InventoryItem[];
-  messages: string[];
-}
+export type { GameStateData, InventoryItem, RoomAsset, RoomHotspot, RoomLayer, RoomObjectState, RoomState };
 
 export interface GameStoreState {
   sessionId: string | null;
@@ -56,7 +35,10 @@ export const initialGameData: GameStateData = {
     roomName: "Escape Room",
     width: 900,
     height: 600,
-    interactables: [
+    backgroundColor: "#0b1220",
+    assets: [],
+    layers: [],
+    hotspots: [
       {
         id: "desk-note",
         name: "Desk Note",
@@ -66,6 +48,9 @@ export const initialGameData: GameStateData = {
         height: 50,
         color: "#facc15",
         available: true,
+        visible: true,
+        locked: false,
+        interactive: true,
       },
       {
         id: "rusty-key",
@@ -76,6 +61,9 @@ export const initialGameData: GameStateData = {
         height: 40,
         color: "#94a3b8",
         available: true,
+        visible: true,
+        locked: false,
+        interactive: true,
       },
       {
         id: "locked-chest",
@@ -86,7 +74,15 @@ export const initialGameData: GameStateData = {
         height: 90,
         color: "#b45309",
         available: true,
+        visible: true,
+        locked: true,
+        interactive: true,
       },
+    ],
+    objectStates: [
+      { id: "desk-note", visible: true, available: true, locked: false, interactive: true },
+      { id: "rusty-key", visible: true, available: true, locked: false, interactive: true },
+      { id: "locked-chest", visible: true, available: true, locked: true, interactive: true },
     ],
   },
   inventory: [
@@ -100,6 +96,15 @@ export const initialGameData: GameStateData = {
 };
 
 const asString = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
+
+const asStringArray = (value: unknown): string[] | undefined => {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  const entries = value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+  return entries.length > 0 ? entries : undefined;
+};
 
 const toInventoryItem = (value: unknown, index: number): InventoryItem | null => {
   if (typeof value === "string") {
@@ -148,46 +153,247 @@ const normalizeInventory = (value: unknown): InventoryItem[] => {
   return items.length > 0 ? items : [];
 };
 
-const mergeInteractables = (
-  currentInteractables: Interactable[],
-  nextInteractables: Array<Record<string, unknown>>
-): Interactable[] => {
-  const byId = new Map(currentInteractables.map((entry) => [entry.id, entry]));
+const toHotspot = (value: Record<string, unknown>, defaults?: RoomHotspot): RoomHotspot | null => {
+  const id = asString(value.id) ?? defaults?.id;
+  if (!id) {
+    return null;
+  }
 
-  for (const patch of nextInteractables) {
+  return {
+    id,
+    name: asString(value.name) ?? defaults?.name ?? id,
+    x: typeof value.x === "number" ? value.x : defaults?.x ?? 0,
+    y: typeof value.y === "number" ? value.y : defaults?.y ?? 0,
+    width: typeof value.width === "number" ? value.width : defaults?.width ?? 80,
+    height: typeof value.height === "number" ? value.height : defaults?.height ?? 40,
+    color: asString(value.color) ?? defaults?.color ?? "#94a3b8",
+    available: typeof value.available === "boolean" ? value.available : defaults?.available ?? true,
+    visible: typeof value.visible === "boolean" ? value.visible : defaults?.visible ?? true,
+    locked: typeof value.locked === "boolean" ? value.locked : defaults?.locked ?? false,
+    interactive: typeof value.interactive === "boolean" ? value.interactive : defaults?.interactive ?? true,
+    hitArea: value.hitArea === "ellipse" ? "ellipse" : defaults?.hitArea ?? "rect",
+    layerId: asString(value.layerId) ?? defaults?.layerId,
+    objectId: asString(value.objectId) ?? defaults?.objectId,
+    targetableItemIds: asStringArray(value.targetableItemIds) ?? defaults?.targetableItemIds,
+    targetableModes: Array.isArray(value.targetableModes)
+      ? value.targetableModes.filter(
+          (entry): entry is "use" | "combine" | "inspect" | "pickup" =>
+            entry === "use" || entry === "combine" || entry === "inspect" || entry === "pickup"
+        )
+      : defaults?.targetableModes,
+  };
+};
+
+const toLayer = (value: Record<string, unknown>, defaults?: RoomLayer): RoomLayer | null => {
+  const id = asString(value.id) ?? defaults?.id;
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    name: asString(value.name) ?? defaults?.name ?? id,
+    zIndex: typeof value.zIndex === "number" ? value.zIndex : defaults?.zIndex ?? 0,
+    visible: typeof value.visible === "boolean" ? value.visible : defaults?.visible ?? true,
+    opacity:
+      typeof value.opacity === "number" && Number.isFinite(value.opacity)
+        ? Math.max(0, Math.min(1, value.opacity))
+        : defaults?.opacity ?? 1,
+    color: asString(value.color) ?? defaults?.color,
+    assetId: asString(value.assetId) ?? defaults?.assetId,
+    objectId: asString(value.objectId) ?? defaults?.objectId,
+  };
+};
+
+const toAsset = (value: Record<string, unknown>, defaults?: RoomAsset): RoomAsset | null => {
+  const id = asString(value.id) ?? defaults?.id;
+  if (!id) {
+    return null;
+  }
+
+  const kind =
+    value.kind === "background" || value.kind === "sprite" || value.kind === "overlay"
+      ? value.kind
+      : defaults?.kind ?? "sprite";
+
+  return {
+    id,
+    kind,
+    x: typeof value.x === "number" ? value.x : defaults?.x ?? 0,
+    y: typeof value.y === "number" ? value.y : defaults?.y ?? 0,
+    width: typeof value.width === "number" ? value.width : defaults?.width ?? 0,
+    height: typeof value.height === "number" ? value.height : defaults?.height ?? 0,
+    zIndex: typeof value.zIndex === "number" ? value.zIndex : defaults?.zIndex ?? 0,
+    visible: typeof value.visible === "boolean" ? value.visible : defaults?.visible ?? true,
+    opacity:
+      typeof value.opacity === "number" && Number.isFinite(value.opacity)
+        ? Math.max(0, Math.min(1, value.opacity))
+        : defaults?.opacity ?? 1,
+    color: asString(value.color) ?? defaults?.color,
+    assetUrl: asString(value.assetUrl) ?? defaults?.assetUrl,
+    objectId: asString(value.objectId) ?? defaults?.objectId,
+  };
+};
+
+const toObjectState = (value: Record<string, unknown>, defaults?: RoomObjectState): RoomObjectState | null => {
+  const id = asString(value.id) ?? defaults?.id;
+  if (!id) {
+    return null;
+  }
+
+  return {
+    id,
+    visible: typeof value.visible === "boolean" ? value.visible : defaults?.visible ?? true,
+    available: typeof value.available === "boolean" ? value.available : defaults?.available ?? true,
+    locked: typeof value.locked === "boolean" ? value.locked : defaults?.locked ?? false,
+    interactive: typeof value.interactive === "boolean" ? value.interactive : defaults?.interactive ?? true,
+  };
+};
+
+const normalizeRoomState = (value: unknown, fallback: RoomState = initialGameData.room): RoomState => {
+  if (!value || typeof value !== "object") {
+    return fallback;
+  }
+
+  const room = value as Record<string, unknown>;
+
+  const normalizedHotspots = Array.isArray(room.hotspots)
+    ? room.hotspots
+        .map((entry) => (entry && typeof entry === "object" ? toHotspot(entry as Record<string, unknown>) : null))
+        .filter((entry): entry is RoomHotspot => entry !== null)
+    : [];
+
+  const legacyHotspots = Array.isArray(room.interactables)
+    ? room.interactables
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return null;
+          }
+
+          const legacy = entry as Record<string, unknown>;
+          return toHotspot(
+            {
+              ...legacy,
+              locked: typeof legacy.locked === "boolean" ? legacy.locked : false,
+              interactive: typeof legacy.interactive === "boolean" ? legacy.interactive : true,
+            },
+            undefined
+          );
+        })
+        .filter((entry): entry is RoomHotspot => entry !== null)
+    : [];
+
+  const hotspots = normalizedHotspots.length > 0 ? normalizedHotspots : legacyHotspots.length > 0 ? legacyHotspots : fallback.hotspots;
+
+  const objectStates = Array.isArray(room.objectStates)
+    ? room.objectStates
+        .map((entry) => (entry && typeof entry === "object" ? toObjectState(entry as Record<string, unknown>) : null))
+        .filter((entry): entry is RoomObjectState => entry !== null)
+    : hotspots.map((hotspot) => ({
+        id: hotspot.objectId ?? hotspot.id,
+        visible: hotspot.visible,
+        available: hotspot.available,
+        locked: hotspot.locked,
+        interactive: hotspot.interactive,
+      }));
+
+  const layers = Array.isArray(room.layers)
+    ? room.layers
+        .map((entry) => (entry && typeof entry === "object" ? toLayer(entry as Record<string, unknown>) : null))
+        .filter((entry): entry is RoomLayer => entry !== null)
+    : fallback.layers;
+
+  const assets = Array.isArray(room.assets)
+    ? room.assets
+        .map((entry) => (entry && typeof entry === "object" ? toAsset(entry as Record<string, unknown>) : null))
+        .filter((entry): entry is RoomAsset => entry !== null)
+    : fallback.assets;
+
+  return {
+    roomName: asString(room.roomName) ?? fallback.roomName,
+    width: typeof room.width === "number" ? room.width : fallback.width,
+    height: typeof room.height === "number" ? room.height : fallback.height,
+    backgroundColor: asString(room.backgroundColor) ?? fallback.backgroundColor,
+    hotspots,
+    layers,
+    assets,
+    objectStates,
+  };
+};
+
+const mergeById = <T extends { id: string }>(
+  current: T[],
+  patches: Array<Record<string, unknown>>,
+  factory: (patch: Record<string, unknown>, defaults?: T) => T | null
+): T[] => {
+  const byId = new Map(current.map((entry) => [entry.id, entry]));
+
+  for (const patch of patches) {
     const id = asString(patch.id);
     if (!id) {
       continue;
     }
 
-    const current = byId.get(id);
-    const base: Interactable =
-      current ?? {
-        id,
-        name: id,
-        x: 0,
-        y: 0,
-        width: 80,
-        height: 40,
-        color: "#94a3b8",
-        available: true,
-      };
+    const next = factory(patch, byId.get(id));
+    if (!next) {
+      continue;
+    }
 
-    byId.set(id, {
-      ...base,
-      name: asString(patch.name) ?? base.name,
-      x: typeof patch.x === "number" ? patch.x : base.x,
-      y: typeof patch.y === "number" ? patch.y : base.y,
-      width: typeof patch.width === "number" ? patch.width : base.width,
-      height: typeof patch.height === "number" ? patch.height : base.height,
-      color: asString(patch.color) ?? base.color,
-      available: typeof patch.available === "boolean" ? patch.available : base.available,
-      visible: typeof patch.visible === "boolean" ? patch.visible : base.visible,
-      assetUrl: asString(patch.assetUrl) ?? base.assetUrl,
-    });
+    byId.set(id, next);
   }
 
   return Array.from(byId.values());
+};
+
+const applyRoomPatch = (current: RoomState, roomPatch: NonNullable<StateDiffEnvelope["statePatch"]>["room"]): RoomState => {
+  const next: RoomState = {
+    ...current,
+    roomName: roomPatch.roomName ?? current.roomName,
+    width: roomPatch.width ?? current.width,
+    height: roomPatch.height ?? current.height,
+    backgroundColor: asString(roomPatch.backgroundColor) ?? current.backgroundColor,
+  };
+
+  if (Array.isArray(roomPatch.hotspots)) {
+    next.hotspots = mergeById(current.hotspots, roomPatch.hotspots as Array<Record<string, unknown>>, toHotspot);
+  } else if (Array.isArray(roomPatch.interactables)) {
+    next.hotspots = mergeById(current.hotspots, roomPatch.interactables as Array<Record<string, unknown>>, toHotspot);
+  }
+
+  if (Array.isArray(roomPatch.layers)) {
+    next.layers = mergeById(current.layers, roomPatch.layers as Array<Record<string, unknown>>, toLayer);
+  }
+
+  if (Array.isArray(roomPatch.assets)) {
+    next.assets = mergeById(current.assets, roomPatch.assets as Array<Record<string, unknown>>, toAsset);
+  }
+
+  if (Array.isArray(roomPatch.objectStates)) {
+    next.objectStates = mergeById(
+      current.objectStates,
+      roomPatch.objectStates as Array<Record<string, unknown>>,
+      toObjectState
+    );
+  }
+
+  const objectStateById = new Map(next.objectStates.map((entry) => [entry.id, entry]));
+  next.hotspots = next.hotspots.map((hotspot) => {
+    const objectId = hotspot.objectId ?? hotspot.id;
+    const state = objectStateById.get(objectId);
+    if (!state) {
+      return hotspot;
+    }
+
+    return {
+      ...hotspot,
+      visible: state.visible,
+      available: state.available,
+      locked: state.locked,
+      interactive: state.interactive,
+    };
+  });
+
+  return next;
 };
 
 const applyStatePatch = (current: GameStateData, diff: StateDiffEnvelope): GameStateData => {
@@ -199,19 +405,7 @@ const applyStatePatch = (current: GameStateData, diff: StateDiffEnvelope): GameS
     return current;
   }
 
-  const nextRoom = { ...current.room };
-  if (diff.statePatch.room) {
-    nextRoom.roomName = diff.statePatch.room.roomName ?? nextRoom.roomName;
-    nextRoom.width = diff.statePatch.room.width ?? nextRoom.width;
-    nextRoom.height = diff.statePatch.room.height ?? nextRoom.height;
-
-    if (Array.isArray(diff.statePatch.room.interactables)) {
-      nextRoom.interactables = mergeInteractables(
-        current.room.interactables,
-        diff.statePatch.room.interactables as Array<Record<string, unknown>>
-      );
-    }
-  }
+  const nextRoom = diff.statePatch.room ? applyRoomPatch(current.room, diff.statePatch.room) : current.room;
 
   const nextInventory = Array.isArray(diff.statePatch.inventory)
     ? normalizeInventory(diff.statePatch.inventory)
@@ -230,18 +424,13 @@ const applyStatePatch = (current: GameStateData, diff: StateDiffEnvelope): GameS
 
 const parseStateJson = (stateJson: string): GameStateData => {
   try {
-    const parsed = JSON.parse(stateJson) as Partial<GameStateData>;
+    const parsed = JSON.parse(stateJson) as Partial<GameStateData> & { room?: unknown };
     const messages = Array.isArray(parsed.messages)
       ? parsed.messages.filter((entry): entry is string => typeof entry === "string")
       : initialGameData.messages;
 
     return {
-      room: {
-        roomName: parsed.room?.roomName ?? initialGameData.room.roomName,
-        width: parsed.room?.width ?? initialGameData.room.width,
-        height: parsed.room?.height ?? initialGameData.room.height,
-        interactables: parsed.room?.interactables ?? initialGameData.room.interactables,
-      },
+      room: normalizeRoomState(parsed.room, initialGameData.room),
       inventory: normalizeInventory(parsed.inventory),
       messages,
     };
