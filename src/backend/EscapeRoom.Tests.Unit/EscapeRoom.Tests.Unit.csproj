@@ -27,6 +27,7 @@
   <ItemGroup>
     <ProjectReference Include="..\EscapeRoom.Application\EscapeRoom.Application.csproj" />
     <ProjectReference Include="..\EscapeRoom.Realtime\EscapeRoom.Realtime.csproj" />
+    <ProjectReference Include="..\EscapeRoom.Infrastructure\EscapeRoom.Infrastructure.csproj" />
     <ProjectReference Include="..\EscapeRoom.Domain\EscapeRoom.Domain.csproj" />
     <ProjectReference Include="..\EscapeRoom.TriggerEngine\EscapeRoom.TriggerEngine.csproj" />
   </ItemGroup>

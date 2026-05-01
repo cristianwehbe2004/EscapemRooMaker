@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ReconnectBanner from "../components/ui/ReconnectBanner";
 import { GameRealtimeClient } from "../realtime/gameRealtimeClient";
+import { runSessionRecovery } from "../realtime/recoveryController";
 import { useGameStore } from "../store/gameStore";
 import { GmSessionSummary, PlayerPresenceEvent, SessionTimelineEntry } from "../types/realtime";
 
@@ -29,6 +31,7 @@ const GMPage: React.FC = () => {
 		connected,
 		syncState,
 		sessionId,
+		lastKnownVersion,
 		setConnectionStatus,
 		setSyncState,
 		setSessionId,
@@ -48,9 +51,21 @@ const GMPage: React.FC = () => {
 	const [controlTarget, setControlTarget] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
+	const [replayedDiffCount, setReplayedDiffCount] = useState(0);
+	const [showSyncedBanner, setShowSyncedBanner] = useState(false);
 
 	const sessionRef = useRef<string | null>(sessionId);
 	sessionRef.current = sessionId;
+	const lastKnownVersionRef = useRef(lastKnownVersion);
+	lastKnownVersionRef.current = lastKnownVersion;
+	const clientRef = useRef<GameRealtimeClient | null>(null);
+
+	const showSyncedToast = useCallback(() => {
+		setShowSyncedBanner(true);
+		window.setTimeout(() => {
+			setShowSyncedBanner(false);
+		}, 2200);
+	}, []);
 
 	const client = useMemo(
 		() =>
@@ -87,13 +102,39 @@ const GMPage: React.FC = () => {
 					},
 					onReconnected: () => {
 						setConnectionStatus({ connected: true });
-						setSyncState("synced");
+						const activeSessionId = sessionRef.current;
+						if (!activeSessionId) {
+							setSyncState("synced");
+							return;
+						}
+
+						const runtimeClient = clientRef.current;
+						if (!runtimeClient) {
+							setError("Realtime client was not ready for recovery.");
+							return;
+						}
+
+						void runSessionRecovery({
+							sessionId: activeSessionId,
+							lastKnownVersion: lastKnownVersionRef.current,
+							setSyncState,
+							setReplayedDiffCount,
+							setConnectionError: setError,
+							recoverSession: runtimeClient.recoverSession.bind(runtimeClient),
+							requestSnapshot: runtimeClient.requestSnapshot.bind(runtimeClient),
+							applySnapshot,
+							onSynced: showSyncedToast,
+						});
 					},
 					onDisconnected: () => setConnectionStatus({ connected: false }),
 				}
 			),
-		[accessToken, applyDiff, applySnapshot, setConnectionStatus, setSyncState]
+		[accessToken, applyDiff, applySnapshot, setConnectionStatus, setSyncState, showSyncedToast]
 	);
+
+	useEffect(() => {
+		clientRef.current = client;
+	}, [client]);
 
 	useEffect(() => {
 		return () => {
@@ -218,6 +259,7 @@ const GMPage: React.FC = () => {
 					Server-authoritative spectator view with presence, action timeline, hints, and admin controls.
 				</p>
 			</header>
+			<ReconnectBanner syncState={syncState} replayedDiffCount={replayedDiffCount} showSynced={showSyncedBanner} />
 
 			<section className="grid gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4 lg:grid-cols-[2fr_1fr_1fr]">
 				<input

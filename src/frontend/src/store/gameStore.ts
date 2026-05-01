@@ -90,6 +90,9 @@ export const initialGameData: GameStateData = {
       id: "inv-flashlight",
       label: "Flashlight",
       quantity: 1,
+      type: "tool",
+      stack: false,
+      status: "ready",
     },
   ],
   messages: ["Join a session to start receiving server state diffs."],
@@ -117,6 +120,9 @@ const toInventoryItem = (value: unknown, index: number): InventoryItem | null =>
       id: `inv-${index}-${label.toLowerCase().replace(/\s+/g, "-")}`,
       label,
       quantity: 1,
+      type: "generic",
+      stack: false,
+      status: "ready",
     };
   }
 
@@ -133,11 +139,21 @@ const toInventoryItem = (value: unknown, index: number): InventoryItem | null =>
   const quantityRaw = typeof record.quantity === "number" ? record.quantity : Number(record.quantity);
   const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
   const explicitId = asString(record.id);
+  const type = asString(record.type) ?? "generic";
+  const stack = typeof record.stack === "boolean" ? record.stack : quantity > 1;
+  const status = asString(record.status) ?? "ready";
+  const usableTargetIds = asStringArray(record.usableTargetIds);
+  const combinableWithIds = asStringArray(record.combinableWithIds);
 
   return {
     id: explicitId ?? `inv-${index}-${label.toLowerCase().replace(/\s+/g, "-")}`,
     label,
     quantity,
+    type,
+    stack,
+    status,
+    usableTargetIds,
+    combinableWithIds,
   };
 };
 

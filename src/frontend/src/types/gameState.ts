@@ -2,6 +2,11 @@ export type InventoryItem = {
   id: string;
   label: string;
   quantity: number;
+  type: string;
+  stack: boolean;
+  status: string;
+  usableTargetIds?: string[];
+  combinableWithIds?: string[];
 };
 
 export type RoomAsset = {
