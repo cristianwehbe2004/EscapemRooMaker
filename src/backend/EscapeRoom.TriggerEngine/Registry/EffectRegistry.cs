@@ -5,12 +5,22 @@ namespace EscapeRoom.TriggerEngine.Registry;
 
 public class EffectRegistry(
     EmitMessageEffectExecutor emitMessageEffectExecutor,
-    SetStateValueEffectExecutor setStateValueEffectExecutor) : IEffectRegistry
+    SetStateValueEffectExecutor setStateValueEffectExecutor,
+    AddInventoryItemEffectExecutor addInventoryItemEffectExecutor,
+    RemoveInventoryItemEffectExecutor removeInventoryItemEffectExecutor,
+    SetObjectStateEffectExecutor setObjectStateEffectExecutor,
+    CompleteSessionEffectExecutor completeSessionEffectExecutor,
+    EmitClueEffectExecutor emitClueEffectExecutor) : IEffectRegistry
 {
     private readonly Dictionary<string, IEffectExecutor> _executors = new(StringComparer.OrdinalIgnoreCase)
     {
         ["emitMessage"] = emitMessageEffectExecutor,
-        ["setStateValue"] = setStateValueEffectExecutor
+        ["setStateValue"] = setStateValueEffectExecutor,
+        ["addInventoryItem"] = addInventoryItemEffectExecutor,
+        ["removeInventoryItem"] = removeInventoryItemEffectExecutor,
+        ["setObjectState"] = setObjectStateEffectExecutor,
+        ["completeSession"] = completeSessionEffectExecutor,
+        ["emitClue"] = emitClueEffectExecutor
     };
 
     public IEffectExecutor Get(string type)

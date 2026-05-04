@@ -25,6 +25,8 @@ const EditorPage: React.FC = () => {
   const [editorDoc, setEditorDoc] = useState<EditorDocumentDto>(defaultDocument);
   const [selectedHotspotId, setSelectedHotspotId] = useState<string | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [edgeFromNodeId, setEdgeFromNodeId] = useState("");
+  const [edgeToNodeId, setEdgeToNodeId] = useState("");
   const [issues, setIssues] = useState<ValidationIssueDto[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -229,7 +231,7 @@ const EditorPage: React.FC = () => {
       return;
     }
 
-    setDocument((current) => {
+    setEditorDoc((current) => {
       if (current.triggerGraph.edges.some((x) => x.fromNodeId === fromNodeId && x.toNodeId === toNodeId)) {
         return current;
       }
@@ -325,20 +327,27 @@ const EditorPage: React.FC = () => {
           <div className="space-y-1 rounded border border-slate-700 bg-slate-800 p-2">
             <p className="text-xs text-slate-300">Quick Edge</p>
             <div className="flex gap-2">
-              <select id="edge-from" className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs">
+              <select
+                value={edgeFromNodeId}
+                onChange={(e) => setEdgeFromNodeId(e.target.value)}
+                className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs"
+              >
                 <option value="">from</option>
                 {editorDoc.triggerGraph.nodes.map((node) => <option key={`from-${node.nodeId}`} value={node.nodeId}>{node.nodeId}</option>)}
               </select>
-              <select id="edge-to" className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs">
+              <select
+                value={edgeToNodeId}
+                onChange={(e) => setEdgeToNodeId(e.target.value)}
+                className="w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-xs"
+              >
                 <option value="">to</option>
                 {editorDoc.triggerGraph.nodes.map((node) => <option key={`to-${node.nodeId}`} value={node.nodeId}>{node.nodeId}</option>)}
               </select>
             </div>
             <button
+              disabled={!edgeFromNodeId || !edgeToNodeId || edgeFromNodeId === edgeToNodeId}
               onClick={() => {
-                const from = (window.document.getElementById("edge-from") as HTMLSelectElement | null)?.value ?? "";
-                const to = (window.document.getElementById("edge-to") as HTMLSelectElement | null)?.value ?? "";
-                addEdge(from, to);
+                addEdge(edgeFromNodeId, edgeToNodeId);
               }}
               className="rounded bg-slate-600 px-2 py-1 text-xs"
             >

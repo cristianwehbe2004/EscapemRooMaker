@@ -9,6 +9,24 @@ const mockSubmitAction = jest.fn();
 const mockRecoverSession = jest.fn();
 const mockRequestSnapshot = jest.fn();
 
+const sessionSummary = {
+  sessionId: "session-123",
+  roomId: "room-123",
+  roomName: "Vault Puzzle",
+  status: "Active",
+  durationMinutes: 60,
+  startedAtUtc: new Date().toISOString(),
+  endedAtUtc: null,
+  endsAtUtc: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  serverTimeUtc: new Date().toISOString(),
+  remainingSeconds: 3600,
+  isQuickPlay: false,
+  playerJoinPath: "/player?sessionId=session-123",
+  gmJoinPath: "/gm?sessionId=session-123",
+  actorId: "guest-123",
+  displayName: "Player",
+};
+
 jest.mock("../realtime/gameRealtimeClient", () => ({
   GameRealtimeClient: function MockGameRealtimeClient(
     _options: unknown,
@@ -45,6 +63,10 @@ describe("PlayerPage", () => {
   beforeEach(() => {
     useGameStore.getState().reset();
     jest.clearAllMocks();
+    jest.spyOn(globalThis, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => sessionSummary,
+    } as Response);
     mockStart.mockResolvedValue({
       sessionId: "session-123",
       replayedDiffCount: 0,
@@ -87,28 +109,64 @@ describe("PlayerPage", () => {
     if (randomUuidMock?.mockRestore) {
       randomUuidMock.mockRestore();
     }
+    (globalThis.fetch as jest.Mock | undefined)?.mockRestore?.();
   });
 
-  it("renders overlays and shows action feedback after joining and acting", async () => {
+  it("shows the player entry flow before connecting", () => {
     render(<PlayerPage />);
+
+    expect(screen.getByText("Escape Room")).toBeInTheDocument();
+    expect(screen.getByText("Start")).toBeInTheDocument();
+    expect(screen.getByText("Create New Session")).toBeInTheDocument();
+    expect(screen.getAllByText("Join Session")).toHaveLength(2);
+  });
+
+  it("quick starts a timed session and shows action feedback after acting", async () => {
+    render(<PlayerPage />);
+
+    fireEvent.click(screen.getByText("Start"));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "http://localhost:5000/api/player/sessions/quick-start",
+        expect.objectContaining({ method: "POST" })
+      );
+      expect(mockStart).toHaveBeenCalledWith(
+        "session-123",
+        undefined,
+        expect.objectContaining({ displayName: "Player" })
+      );
+    });
 
     expect(screen.getByText("Inventory")).toBeInTheDocument();
     expect(screen.getByText("Flashlight")).toBeInTheDocument();
     expect(screen.getByText("Action Feedback")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
-      target: { value: "session-123" },
-    });
-    fireEvent.click(screen.getByText("Join Session"));
-
-    await waitFor(() => {
-      expect(mockStart).toHaveBeenCalledWith("session-123");
-    });
-
     fireEvent.click(screen.getByText("Inspect Desk Note"));
     await waitFor(() => {
       expect(mockSubmitAction).toHaveBeenCalledTimes(1);
       expect(screen.getByText(/last action:/i)).toHaveTextContent("inspect -> desk-note");
+    });
+  });
+
+  it("joins an existing active session", async () => {
+    render(<PlayerPage />);
+
+    fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
+      target: { value: "session-123" },
+    });
+    fireEvent.click(screen.getAllByText("Join Session")[1]);
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "http://localhost:5000/api/player/sessions/session-123/join",
+        expect.objectContaining({ method: "POST" })
+      );
+      expect(mockStart).toHaveBeenCalledWith(
+        "session-123",
+        undefined,
+        expect.objectContaining({ guestActorId: expect.stringMatching(/^guest-/) })
+      );
     });
   });
 
@@ -136,10 +194,10 @@ describe("PlayerPage", () => {
     fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
       target: { value: "session-123" },
     });
-    fireEvent.click(screen.getByText("Join Session"));
+    fireEvent.click(screen.getAllByText("Join Session")[1]);
 
     await waitFor(() => {
-      expect(mockStart).toHaveBeenCalledWith("session-123");
+      expect(mockStart).toHaveBeenCalled();
     });
 
     fireEvent.click(screen.getByText("Inspect Desk Note"));

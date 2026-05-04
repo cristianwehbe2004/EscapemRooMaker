@@ -15,6 +15,12 @@ public static class StateDiffPayloadBuilder
         "chat"
     ];
 
+    private static readonly string[] CluePrefixes =
+    [
+        "clue",
+        "clues"
+    ];
+
     private static readonly string[] InventoryPrefixes =
     [
         "inventory",
@@ -31,6 +37,12 @@ public static class StateDiffPayloadBuilder
         "asset",
         "layer",
         "puzzle"
+    ];
+
+    private static readonly string[] SessionPrefixes =
+    [
+        "session",
+        "timer"
     ];
 
     public static (StatePatchEnvelope? StatePatch, string? FullStateJson) Build(
@@ -51,8 +63,10 @@ public static class StateDiffPayloadBuilder
         var hasNonMessageMutations = normalizedChanges.Any(change => !HasPrefix(change, MessageOnlyPrefixes));
         var includesInventory = IsInventoryAction(actionType) || normalizedChanges.Any(change => HasPrefix(change, InventoryPrefixes));
         var includesRoom = IsRoomAction(actionType) || normalizedChanges.Any(change => HasPrefix(change, RoomPrefixes));
+        var includesClues = normalizedChanges.Any(change => HasPrefix(change, CluePrefixes));
+        var includesSession = normalizedChanges.Any(change => HasPrefix(change, SessionPrefixes));
 
-        if (!includesInventory && !includesRoom)
+        if (!includesInventory && !includesRoom && !includesClues && !includesSession)
         {
             return hasNonMessageMutations ? (null, updatedStateJson) : (null, null);
         }
@@ -66,6 +80,16 @@ public static class StateDiffPayloadBuilder
         if (includesInventory && stateRoot["inventory"] is JsonArray inventory)
         {
             statePatch.Inventory = (JsonArray)inventory.DeepClone();
+        }
+
+        if (includesClues && stateRoot["clues"] is JsonArray clues)
+        {
+            statePatch.Clues = (JsonArray)clues.DeepClone();
+        }
+
+        if (includesSession && stateRoot["session"] is JsonObject session)
+        {
+            statePatch.Session = (JsonObject)session.DeepClone();
         }
 
         if (includesRoom && stateRoot["room"] is JsonObject room)
@@ -87,7 +111,7 @@ public static class StateDiffPayloadBuilder
             }
         }
 
-        if (statePatch.Inventory is null && statePatch.Room is null)
+        if (statePatch.Inventory is null && statePatch.Room is null && statePatch.Clues is null && statePatch.Session is null)
         {
             return hasNonMessageMutations ? (null, updatedStateJson) : (null, null);
         }
@@ -117,4 +141,3 @@ public static class StateDiffPayloadBuilder
         }
     }
 }
-

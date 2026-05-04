@@ -81,8 +81,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
                 .IsRequired();
             entity.Property(x => x.StateSnapshot).HasColumnType("jsonb").IsRequired();
             entity.Property(x => x.StartedAtUtc).IsRequired();
+            entity.Property(x => x.DurationMinutes).IsRequired();
+            entity.Property(x => x.LastActivityAtUtc).IsRequired();
+            entity.Property(x => x.HostActorId).HasMaxLength(128);
+            entity.Property(x => x.IsQuickPlay).IsRequired();
             entity.HasIndex(x => x.RoomId);
             entity.HasIndex(x => x.Status);
+            entity.HasIndex(x => x.EndsAtUtc);
         });
 
         modelBuilder.Entity<RoomRating>(entity =>

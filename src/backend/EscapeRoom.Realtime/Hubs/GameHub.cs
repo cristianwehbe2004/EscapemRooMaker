@@ -10,7 +10,6 @@ using System.Text.Json;
 
 namespace EscapeRoom.Realtime.Hubs;
 
-[Authorize]
 public class GameHub(
     ISessionActionProcessor sessionActionProcessor,
     ISessionStateStore sessionStateStore,
@@ -31,10 +30,19 @@ public class GameHub(
         await base.OnDisconnectedAsync(exception);
     }
 
-    public async Task<JoinSessionAck> JoinSession(Guid sessionId, int? lastKnownVersion = null, CancellationToken cancellationToken = default)
+    public async Task<JoinSessionAck> JoinSession(
+        Guid sessionId,
+        int? lastKnownVersion = null,
+        string? displayName = null,
+        string? guestActorId = null,
+        CancellationToken cancellationToken = default)
     {
         await Groups.AddToGroupAsync(Context.ConnectionId, SessionGroup(sessionId));
-        var connected = playerPresenceTracker.TrackConnected(sessionId, ResolveActor(), ResolveDisplayName(), Context.ConnectionId);
+        var connected = playerPresenceTracker.TrackConnected(
+            sessionId,
+            ResolveActor(guestActorId),
+            ResolveDisplayName(displayName, guestActorId),
+            Context.ConnectionId);
         await Clients.Group(SessionGroup(sessionId)).SendAsync("PlayerPresenceChanged", connected, cancellationToken);
 
         var replayCount = 0;
@@ -232,16 +240,18 @@ public class GameHub(
         };
     }
 
-    private string ResolveActor()
+    private string ResolveActor(string? guestActorId = null)
         => Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
             ?? Context.User?.FindFirstValue("sub")
+            ?? (string.IsNullOrWhiteSpace(guestActorId) ? null : guestActorId.Trim())
             ?? "unknown";
 
-    private string ResolveDisplayName()
+    private string ResolveDisplayName(string? displayName = null, string? guestActorId = null)
         => Context.User?.FindFirstValue(ClaimTypes.Name)
             ?? Context.User?.FindFirstValue(ClaimTypes.Email)
             ?? Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? ResolveActor();
+            ?? (string.IsNullOrWhiteSpace(displayName) ? null : displayName.Trim())
+            ?? ResolveActor(guestActorId);
 
     private string ResolveActorRole()
     {

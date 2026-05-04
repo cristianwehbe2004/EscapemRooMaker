@@ -95,10 +95,19 @@ export const initialGameData: GameStateData = {
       status: "ready",
     },
   ],
+  clues: [],
   messages: ["Join a session to start receiving server state diffs."],
 };
 
 const asString = (value: unknown): string | null => (typeof value === "string" && value.trim() ? value : null);
+const asOptionalString = (value: unknown): string | undefined => asString(value) ?? undefined;
+const asNumber = (value: unknown): number | undefined => {
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const getRecordValue = (record: Record<string, unknown>, camelKey: string, pascalKey: string = camelKey[0].toUpperCase() + camelKey.slice(1)): unknown =>
+  record[camelKey] ?? record[pascalKey];
 
 const asStringArray = (value: unknown): string[] | undefined => {
   if (!Array.isArray(value)) {
@@ -326,14 +335,43 @@ const normalizeRoomState = (value: unknown, fallback: RoomState = initialGameDat
     : fallback.assets;
 
   return {
-    roomName: asString(room.roomName) ?? fallback.roomName,
-    width: typeof room.width === "number" ? room.width : fallback.width,
-    height: typeof room.height === "number" ? room.height : fallback.height,
-    backgroundColor: asString(room.backgroundColor) ?? fallback.backgroundColor,
+    roomName: asString(getRecordValue(room, "roomName")) ?? fallback.roomName,
+    width: typeof getRecordValue(room, "width") === "number" ? (getRecordValue(room, "width") as number) : fallback.width,
+    height: typeof getRecordValue(room, "height") === "number" ? (getRecordValue(room, "height") as number) : fallback.height,
+    backgroundColor: asString(getRecordValue(room, "backgroundColor")) ?? fallback.backgroundColor,
     hotspots,
     layers,
     assets,
     objectStates,
+  };
+};
+
+const normalizeClues = (value: unknown): string[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0);
+};
+
+const normalizeSessionState = (value: unknown): GameStateData["session"] | undefined => {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  return {
+    sessionId: asOptionalString(getRecordValue(record, "sessionId")),
+    roomId: asOptionalString(getRecordValue(record, "roomId")),
+    roomName: asOptionalString(getRecordValue(record, "roomName")),
+    status: asOptionalString(getRecordValue(record, "status")),
+    durationMinutes: asNumber(getRecordValue(record, "durationMinutes")),
+    startedAtUtc: asOptionalString(getRecordValue(record, "startedAtUtc")),
+    endedAtUtc: asString(getRecordValue(record, "endedAtUtc")),
+    endsAtUtc: asString(getRecordValue(record, "endsAtUtc")),
+    serverTimeUtc: asOptionalString(getRecordValue(record, "serverTimeUtc")),
+    remainingSeconds: asNumber(getRecordValue(record, "remainingSeconds")),
+    isQuickPlay: typeof getRecordValue(record, "isQuickPlay") === "boolean" ? (getRecordValue(record, "isQuickPlay") as boolean) : undefined,
   };
 };
 
@@ -361,7 +399,14 @@ const mergeById = <T extends { id: string }>(
   return Array.from(byId.values());
 };
 
-const applyRoomPatch = (current: RoomState, roomPatch: NonNullable<StateDiffEnvelope["statePatch"]>["room"]): RoomState => {
+const applyRoomPatch = (
+  current: RoomState,
+  roomPatch: NonNullable<StateDiffEnvelope["statePatch"]>["room"] | undefined
+): RoomState => {
+  if (!roomPatch) {
+    return current;
+  }
+
   const next: RoomState = {
     ...current,
     roomName: roomPatch.roomName ?? current.roomName,
@@ -427,6 +472,9 @@ const applyStatePatch = (current: GameStateData, diff: StateDiffEnvelope): GameS
     ? normalizeInventory(diff.statePatch.inventory)
     : current.inventory;
 
+  const nextClues = Array.isArray(diff.statePatch.clues) ? normalizeClues(diff.statePatch.clues) : current.clues;
+  const nextSession = diff.statePatch.session ? normalizeSessionState(diff.statePatch.session) : current.session;
+
   const patchMessages = Array.isArray(diff.statePatch.messages)
     ? diff.statePatch.messages.filter((message): message is string => typeof message === "string")
     : [];
@@ -434,7 +482,9 @@ const applyStatePatch = (current: GameStateData, diff: StateDiffEnvelope): GameS
   return {
     room: nextRoom,
     inventory: nextInventory,
+    clues: nextClues,
     messages: [...current.messages, ...patchMessages],
+    session: nextSession,
   };
 };
 
@@ -448,7 +498,9 @@ const parseStateJson = (stateJson: string): GameStateData => {
     return {
       room: normalizeRoomState(parsed.room, initialGameData.room),
       inventory: normalizeInventory(parsed.inventory),
+      clues: normalizeClues(parsed.clues),
       messages,
+      session: normalizeSessionState(parsed.session),
     };
   } catch {
     return initialGameData;

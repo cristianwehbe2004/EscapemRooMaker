@@ -16,12 +16,14 @@ public class TriggerGraphValidatorTests
             Nodes =
             [
                 new() { NodeId = "a", Family = "condition", Type = "actionTypeEquals" },
-                new() { NodeId = "b", Family = "effect", Type = "emitMessage" }
+                new() { NodeId = "b", Family = "combinator", Type = "allTrue" },
+                new() { NodeId = "c", Family = "combinator", Type = "allTrue" }
             ],
             Edges =
             [
                 new() { FromNodeId = "a", ToNodeId = "b" },
-                new() { FromNodeId = "b", ToNodeId = "a" }
+                new() { FromNodeId = "b", ToNodeId = "c" },
+                new() { FromNodeId = "c", ToNodeId = "b" }
             ]
         };
 
@@ -174,6 +176,74 @@ public class TriggerGraphValidatorTests
         var result = _validator.Validate(graph);
         result.IsValid.Should().BeTrue();
         result.Errors.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Validate_ShouldRejectEdgeFromEffectNode()
+    {
+        var graph = new TriggerGraphDefinition
+        {
+            Nodes =
+            [
+                new() { NodeId = "cond1", Family = "condition", Type = "actionTypeEquals" },
+                new() { NodeId = "effect1", Family = "effect", Type = "emitMessage" },
+                new() { NodeId = "effect2", Family = "effect", Type = "emitMessage" }
+            ],
+            Edges =
+            [
+                new() { FromNodeId = "cond1", ToNodeId = "effect1" },
+                new() { FromNodeId = "effect1", ToNodeId = "effect2" }
+            ]
+        };
+
+        var result = _validator.Validate(graph);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.Contains("Invalid edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Validate_ShouldRejectConditionToConditionEdge()
+    {
+        var graph = new TriggerGraphDefinition
+        {
+            Nodes =
+            [
+                new() { NodeId = "cond1", Family = "condition", Type = "actionTypeEquals" },
+                new() { NodeId = "cond2", Family = "condition", Type = "actionTypeEquals" },
+                new() { NodeId = "effect1", Family = "effect", Type = "emitMessage" }
+            ],
+            Edges =
+            [
+                new() { FromNodeId = "cond1", ToNodeId = "cond2" },
+                new() { FromNodeId = "cond2", ToNodeId = "effect1" }
+            ]
+        };
+
+        var result = _validator.Validate(graph);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.Contains("Invalid edge", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Validate_ShouldRejectGraphWithoutReachableEffect()
+    {
+        var graph = new TriggerGraphDefinition
+        {
+            Nodes =
+            [
+                new() { NodeId = "cond1", Family = "condition", Type = "actionTypeEquals" },
+                new() { NodeId = "comb1", Family = "combinator", Type = "allTrue" },
+                new() { NodeId = "effect1", Family = "effect", Type = "emitMessage" }
+            ],
+            Edges =
+            [
+                new() { FromNodeId = "cond1", ToNodeId = "comb1" }
+            ]
+        };
+
+        var result = _validator.Validate(graph);
+        result.IsValid.Should().BeFalse();
+        result.Errors.Should().Contain(x => x.Contains("reachable", StringComparison.OrdinalIgnoreCase));
     }
 
     [Fact]

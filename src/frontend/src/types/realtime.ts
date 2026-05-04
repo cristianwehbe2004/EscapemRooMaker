@@ -93,6 +93,20 @@ export interface StatePatchEnvelope {
     }>;
   };
   inventory?: Array<string | InventoryItemPatch>;
+  clues?: string[];
+  session?: {
+    sessionId?: string;
+    roomId?: string;
+    roomName?: string;
+    status?: string;
+    durationMinutes?: number;
+    startedAtUtc?: string;
+    endedAtUtc?: string | null;
+    endsAtUtc?: string | null;
+    serverTimeUtc?: string;
+    remainingSeconds?: number;
+    isQuickPlay?: boolean;
+  };
   messages?: string[];
 }
 

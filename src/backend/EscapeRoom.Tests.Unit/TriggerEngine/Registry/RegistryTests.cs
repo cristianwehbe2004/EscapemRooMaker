@@ -15,7 +15,11 @@ public class RegistryTests
 
         public ConditionRegistryTests()
         {
-            _registry = new ConditionRegistry(new ActionTypeConditionEvaluator());
+            _registry = new ConditionRegistry(
+                new ActionTypeConditionEvaluator(),
+                new TargetEqualsConditionEvaluator(),
+                new InventoryHasItemConditionEvaluator(),
+                new StateValueEqualsConditionEvaluator());
         }
 
         [Fact]
@@ -132,7 +136,12 @@ public class RegistryTests
         {
             _registry = new EffectRegistry(
                 new EmitMessageEffectExecutor(),
-                new SetStateValueEffectExecutor());
+                new SetStateValueEffectExecutor(),
+                new AddInventoryItemEffectExecutor(),
+                new RemoveInventoryItemEffectExecutor(),
+                new SetObjectStateEffectExecutor(),
+                new CompleteSessionEffectExecutor(),
+                new EmitClueEffectExecutor());
         }
 
         [Theory]

@@ -93,6 +93,20 @@ public class CreatorRoomService(
         };
     }
 
+    public async Task<PublishRoomResponse> PublishAsync(Guid roomId, Guid actorUserId, bool isAdmin, CancellationToken cancellationToken = default)
+    {
+        var room = await GetAuthorizedRoomAsync(roomId, actorUserId, isAdmin, cancellationToken);
+        room.IsPublished = true;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new PublishRoomResponse
+        {
+            RoomId = room.Id,
+            IsPublished = room.IsPublished,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+    }
+
     private static string BuildInitialSessionState(string graphDefinition)
     {
         var document = EditorDocumentMapper.Deserialize(graphDefinition);

@@ -48,6 +48,14 @@ public class CreatorRoomsController(ICreatorRoomService creatorRoomService) : Co
         return Ok(response);
     }
 
+    [HttpPost("{roomId:guid}/publish")]
+    public async Task<ActionResult<PublishRoomResponse>> Publish(Guid roomId, CancellationToken cancellationToken)
+    {
+        var (userId, isAdmin) = ResolveActor();
+        var response = await creatorRoomService.PublishAsync(roomId, userId, isAdmin, cancellationToken);
+        return Ok(response);
+    }
+
     private (Guid userId, bool isAdmin) ResolveActor()
     {
         var subject = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");

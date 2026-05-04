@@ -44,7 +44,9 @@ public class TriggerGraphValidator : ITriggerGraphValidator
             return result;
         }
 
+        var nodesById = graph.Nodes.ToDictionary(x => x.NodeId, StringComparer.OrdinalIgnoreCase);
         var adjacency = graph.Nodes.ToDictionary(x => x.NodeId, _ => new List<string>(), StringComparer.OrdinalIgnoreCase);
+        var incomingCounts = graph.Nodes.ToDictionary(x => x.NodeId, _ => 0, StringComparer.OrdinalIgnoreCase);
         foreach (var edge in graph.Edges)
         {
             if (!adjacency.ContainsKey(edge.FromNodeId))
@@ -59,7 +61,16 @@ public class TriggerGraphValidator : ITriggerGraphValidator
                 continue;
             }
 
+            var fromFamily = NormalizeFamily(nodesById[edge.FromNodeId].Family);
+            var toFamily = NormalizeFamily(nodesById[edge.ToNodeId].Family);
+            if (!IsValidFamilyTransition(fromFamily, toFamily))
+            {
+                result.Errors.Add(
+                    $"Invalid edge '{edge.FromNodeId}' ({fromFamily}) -> '{edge.ToNodeId}' ({toFamily}). Allowed transitions: condition->combinator|effect, combinator->combinator|effect.");
+            }
+
             adjacency[edge.FromNodeId].Add(edge.ToNodeId);
+            incomingCounts[edge.ToNodeId]++;
         }
 
         if (result.Errors.Count == 0 && GraphCycleDetector.HasCycle(adjacency))
@@ -67,6 +78,56 @@ public class TriggerGraphValidator : ITriggerGraphValidator
             result.Errors.Add("Graph contains at least one cycle.");
         }
 
+        if (result.Errors.Count > 0)
+        {
+            return result;
+        }
+
+        var reachable = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<string>();
+        foreach (var node in graph.Nodes)
+        {
+            var family = NormalizeFamily(node.Family);
+            if ((family == "condition" || family == "combinator") && incomingCounts[node.NodeId] == 0)
+            {
+                queue.Enqueue(node.NodeId);
+                reachable.Add(node.NodeId);
+            }
+        }
+
+        while (queue.Count > 0)
+        {
+            var current = queue.Dequeue();
+            foreach (var next in adjacency[current])
+            {
+                if (reachable.Add(next))
+                {
+                    queue.Enqueue(next);
+                }
+            }
+        }
+
+        var hasReachableEffect = graph.Nodes.Any(node =>
+            NormalizeFamily(node.Family) == "effect" &&
+            reachable.Contains(node.NodeId));
+
+        if (!hasReachableEffect)
+        {
+            result.Errors.Add("Graph must include at least one effect node reachable from a condition/combinator path.");
+        }
+
         return result;
+    }
+
+    private static string NormalizeFamily(string family) => family.Trim().ToLowerInvariant();
+
+    private static bool IsValidFamilyTransition(string fromFamily, string toFamily)
+    {
+        return fromFamily switch
+        {
+            "condition" => toFamily is "combinator" or "effect",
+            "combinator" => toFamily is "combinator" or "effect",
+            _ => false
+        };
     }
 }

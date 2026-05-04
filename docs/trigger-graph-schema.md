@@ -93,6 +93,9 @@ Execution policy for effect nodes.
 | Type | Config | Description |
 |------|--------|-------------|
 | `actionTypeEquals` | `expectedActionType` | Matches when action type equals the expected value |
+| `targetEquals` | `expectedTarget` or `targetId` | Matches when the player action target matches a hotspot/object id |
+| `inventoryHasItem` | `itemId` | Matches when the session inventory contains an item id |
+| `stateValueEquals` | `key` or `path`, `value` | Matches when a dot-path value in session state equals the configured value |
 
 ### Combinators
 | Type | Description |
@@ -105,6 +108,22 @@ Execution policy for effect nodes.
 |------|--------|-------------|
 | `setStateValue` | `key`, `value` | Sets a value in session state |
 | `emitMessage` | `message` | Emits a message to all players in the session |
+| `addInventoryItem` | `item` or `id`/`label`/`type` | Adds an item to inventory if not already present |
+| `removeInventoryItem` | `itemId` or `id` | Removes an item from inventory |
+| `setObjectState` | `objectId`, `visible`, `available`, `locked`, `interactive` | Updates room object state used by hotspots/layers/assets |
+| `emitClue` | `clue` or `message` | Adds a player-facing clue and emits it as a message |
+| `completeSession` | `message` | Marks the session completed and emits an optional completion message |
+
+## Player Actions
+
+The player UI submits these action types:
+
+| Action | Target | Payload |
+|--------|--------|---------|
+| `inspect` | hotspot/object id | `{}` |
+| `pickup` | hotspot/object id | `{}` |
+| `inventory.use` | target hotspot/object id | `{ "itemId": "inventory-item-id" }` |
+| `inventory.combine` | secondary item id | `{ "primaryItemId": "...", "secondaryItemId": "..." }` |
 
 ## Session Locking
 - Redis distributed lock ensures only one evaluation runs per session at a time

@@ -1,0 +1,28 @@
+export type CreateSessionRequest = {
+  roomId?: string;
+  durationMinutes?: number;
+  displayName?: string;
+};
+
+export type JoinSessionRequest = {
+  displayName?: string;
+  guestActorId?: string;
+};
+
+export type PlayerSessionSummary = {
+  sessionId: string;
+  roomId: string;
+  roomName: string;
+  status: string;
+  durationMinutes: number;
+  startedAtUtc: string;
+  endedAtUtc?: string | null;
+  endsAtUtc?: string | null;
+  serverTimeUtc: string;
+  remainingSeconds: number;
+  isQuickPlay: boolean;
+  playerJoinPath: string;
+  gmJoinPath: string;
+  actorId: string;
+  displayName: string;
+};

@@ -55,11 +55,21 @@ export class GameRealtimeClient {
     });
   }
 
-  async start(sessionId: string, lastKnownVersion?: number): Promise<JoinSessionAck> {
+  async start(
+    sessionId: string,
+    lastKnownVersion?: number,
+    identity?: { displayName?: string; guestActorId?: string }
+  ): Promise<JoinSessionAck> {
     this.activeSessionId = sessionId;
     await this.ensureStarted();
 
-    return this.connection.invoke<JoinSessionAck>("JoinSession", sessionId, lastKnownVersion ?? null);
+    return this.connection.invoke<JoinSessionAck>(
+      "JoinSession",
+      sessionId,
+      lastKnownVersion ?? null,
+      identity?.displayName ?? null,
+      identity?.guestActorId ?? null
+    );
   }
 
   async stop(): Promise<void> {

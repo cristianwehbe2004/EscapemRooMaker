@@ -19,5 +19,7 @@ public class StatePatchEnvelope
 {
     public JsonObject? Room { get; set; }
     public JsonArray? Inventory { get; set; }
+    public JsonArray? Clues { get; set; }
+    public JsonObject? Session { get; set; }
     public List<string>? Messages { get; set; }
 }

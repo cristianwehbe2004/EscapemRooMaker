@@ -6,6 +6,7 @@ using EscapeRoom.Application.Triggering.Contracts;
 using EscapeRoom.Domain.Entities;
 using EscapeRoom.Domain.Enums;
 using EscapeRoom.Infrastructure.Data;
+using EscapeRoom.Infrastructure.Sessions;
 using EscapeRoom.TriggerEngine.Evaluation;
 using EscapeRoom.TriggerEngine.Validation;
 using Microsoft.EntityFrameworkCore;
@@ -25,6 +26,27 @@ public class SessionActionProcessor(
             ?? throw new InvalidOperationException($"Session '{sessionId}' was not found.");
         var room = await dbContext.Rooms.FirstOrDefaultAsync(x => x.Id == session.RoomId, cancellationToken)
             ?? throw new InvalidOperationException($"Room '{session.RoomId}' was not found.");
+
+        var now = DateTime.UtcNow;
+        if (session.Status == SessionStatus.Pending)
+        {
+            throw new InvalidOperationException("Session has not started yet.");
+        }
+
+        if (session.Status == SessionStatus.Active && session.EndsAtUtc is not null && session.EndsAtUtc <= now)
+        {
+            session.Status = SessionStatus.Expired;
+            session.EndedAtUtc = now;
+            session.LastActivityAtUtc = now;
+            session.StateSnapshot = SessionStateFactory.WithSessionState(session.StateSnapshot, room, session, now);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            throw new InvalidOperationException("Session timer has expired.");
+        }
+
+        if (session.Status is SessionStatus.Completed or SessionStatus.Cancelled or SessionStatus.Expired)
+        {
+            throw new InvalidOperationException($"Session is {session.Status}.");
+        }
 
         var graph = ParseTriggerGraph(room.GraphDefinition);
         var validation = graphValidator.Validate(graph);
@@ -70,17 +92,26 @@ public class SessionActionProcessor(
                 OccurredAtUtc = DateTime.UtcNow
             });
 
-            session.StateSnapshot = evaluation.UpdatedStateJson;
-            if (session.Status == SessionStatus.Pending)
+            var stateAfterEvaluation = JsonNode.Parse(evaluation.UpdatedStateJson) as JsonObject ?? new JsonObject();
+            if (StateMarksSessionCompleted(stateAfterEvaluation))
             {
-                session.Status = SessionStatus.Active;
+                session.Status = SessionStatus.Completed;
+                session.CompletedAtUtc ??= DateTime.UtcNow;
+                session.EndedAtUtc ??= session.CompletedAtUtc;
             }
+
+            session.LastActivityAtUtc = DateTime.UtcNow;
+            session.StateSnapshot = SessionStateFactory.WithSessionState(
+                stateAfterEvaluation.ToJsonString(JsonOptions()),
+                room,
+                session,
+                DateTime.UtcNow);
 
             dbContext.SessionSnapshots.Add(new SessionSnapshot
             {
                 SessionId = sessionId,
                 Version = nextVersion,
-                StateData = evaluation.UpdatedStateJson,
+                StateData = session.StateSnapshot,
                 CreatedAtUtc = DateTime.UtcNow
             });
 
@@ -91,7 +122,7 @@ public class SessionActionProcessor(
             var appliedEffects = evaluation.AppliedEffects.ToList();
             ApplyBuiltInGmEffects(action, changedEntities, emittedMessages, appliedEffects);
             var (statePatch, fullStateJson) = StateDiffPayloadBuilder.Build(
-                evaluation.UpdatedStateJson,
+                session.StateSnapshot,
                 action.ActionType,
                 changedEntities);
 
@@ -112,7 +143,7 @@ public class SessionActionProcessor(
             {
                 SessionId = sessionId,
                 SessionVersion = nextVersion,
-                StateJson = evaluation.UpdatedStateJson,
+                StateJson = session.StateSnapshot,
                 ServerTimeUtc = DateTime.UtcNow
             }, cancellationToken);
             await sessionStateStore.AppendDiffAsync(sessionId, diff, cancellationToken);
@@ -123,6 +154,17 @@ public class SessionActionProcessor(
         {
             await sessionLockService.ReleaseAsync(lockHandle);
         }
+    }
+
+    private static bool StateMarksSessionCompleted(JsonObject state)
+    {
+        if (state["session"] is not JsonObject session)
+        {
+            return false;
+        }
+
+        var status = session["status"]?.GetValue<string>();
+        return string.Equals(status, "Completed", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void ApplyBuiltInGmEffects(

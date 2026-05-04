@@ -8,4 +8,5 @@ public interface ICreatorRoomService
     Task<ValidateRoomResponse> ValidateAsync(Guid roomId, EditorDocumentDto document, Guid actorUserId, bool isAdmin, CancellationToken cancellationToken = default);
     Task<SaveRoomResponse> SaveAsync(Guid roomId, EditorDocumentDto document, Guid actorUserId, bool isAdmin, CancellationToken cancellationToken = default);
     Task<CreatePlaytestSessionResponse> CreatePlaytestSessionAsync(Guid roomId, Guid actorUserId, bool isAdmin, CancellationToken cancellationToken = default);
+    Task<PublishRoomResponse> PublishAsync(Guid roomId, Guid actorUserId, bool isAdmin, CancellationToken cancellationToken = default);
 }

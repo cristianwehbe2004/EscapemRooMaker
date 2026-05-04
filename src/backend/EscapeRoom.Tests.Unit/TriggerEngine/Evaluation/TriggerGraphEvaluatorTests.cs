@@ -16,9 +16,20 @@ public class TriggerGraphEvaluatorTests
     public TriggerGraphEvaluatorTests()
     {
         _evaluator = new TriggerGraphEvaluator(
-            new ConditionRegistry(new ActionTypeConditionEvaluator()),
+            new ConditionRegistry(
+                new ActionTypeConditionEvaluator(),
+                new TargetEqualsConditionEvaluator(),
+                new InventoryHasItemConditionEvaluator(),
+                new StateValueEqualsConditionEvaluator()),
             new CombinatorRegistry(new AllTrueCombinatorEvaluator(), new AnyTrueCombinatorEvaluator()),
-            new EffectRegistry(new EmitMessageEffectExecutor(), new SetStateValueEffectExecutor()),
+            new EffectRegistry(
+                new EmitMessageEffectExecutor(),
+                new SetStateValueEffectExecutor(),
+                new AddInventoryItemEffectExecutor(),
+                new RemoveInventoryItemEffectExecutor(),
+                new SetObjectStateEffectExecutor(),
+                new CompleteSessionEffectExecutor(),
+                new EmitClueEffectExecutor()),
             new NoopIdempotencyStore(),
             new IdempotencyKeyBuilder());
     }

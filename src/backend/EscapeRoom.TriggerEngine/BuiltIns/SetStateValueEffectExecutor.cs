@@ -16,7 +16,7 @@ public class SetStateValueEffectExecutor : IEffectExecutor
 
         node.Config.TryGetValue("value", out var value);
         var stateKey = key.ToString() ?? string.Empty;
-        context.State[stateKey] = value?.ToString();
+        JsonStateHelpers.SetPath(context.State, stateKey, JsonStateHelpers.ToJsonNode(value));
         result.ChangedEntities.Add("state");
         return result;
     }
