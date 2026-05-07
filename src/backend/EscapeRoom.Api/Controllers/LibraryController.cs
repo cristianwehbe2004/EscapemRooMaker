@@ -14,12 +14,13 @@ public class LibraryController(ILibraryService libraryService) : ControllerBase
     public async Task<ActionResult<LibraryRoomsResponse>> GetRooms(
         [FromQuery] string? q,
         [FromQuery] string? sort,
+        [FromQuery] bool? featured,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         var viewer = TryResolveUserId();
-        var response = await libraryService.GetPublishedRoomsAsync(q, sort, page, pageSize, viewer, cancellationToken);
+        var response = await libraryService.GetPublishedRoomsAsync(q, sort, featured, page, pageSize, viewer, cancellationToken);
         return Ok(response);
     }
 

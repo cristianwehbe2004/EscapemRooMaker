@@ -2,6 +2,7 @@ using System.Security.Claims;
 using EscapeRoom.Application.Sessions;
 using EscapeRoom.Application.Sessions.Contracts;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EscapeRoom.Api.Controllers;
@@ -16,8 +17,15 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
         [FromBody] CreateSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var response = await playerSessionService.CreateSessionAsync(request, ResolveIdentity(request.DisplayName, null), cancellationToken);
-        return Ok(response);
+        try
+        {
+            var response = await playerSessionService.CreateSessionAsync(request, ResolveIdentity(request.DisplayName, null), cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex) when (TryMapSessionError(ex, out var mapped))
+        {
+            return mapped;
+        }
     }
 
     [HttpPost("quick-start")]
@@ -25,8 +33,15 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
         [FromBody] CreateSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var response = await playerSessionService.QuickStartAsync(request, ResolveIdentity(request.DisplayName, null), cancellationToken);
-        return Ok(response);
+        try
+        {
+            var response = await playerSessionService.QuickStartAsync(request, ResolveIdentity(request.DisplayName, null), cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex) when (TryMapSessionError(ex, out var mapped))
+        {
+            return mapped;
+        }
     }
 
     [HttpPost("{sessionId:guid}/join")]
@@ -35,12 +50,19 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
         [FromBody] JoinSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var response = await playerSessionService.JoinSessionAsync(
-            sessionId,
-            request,
-            ResolveIdentity(request.DisplayName, request.GuestActorId),
-            cancellationToken);
-        return Ok(response);
+        try
+        {
+            var response = await playerSessionService.JoinSessionAsync(
+                sessionId,
+                request,
+                ResolveIdentity(request.DisplayName, request.GuestActorId),
+                cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex) when (TryMapSessionError(ex, out var mapped))
+        {
+            return mapped;
+        }
     }
 
     [HttpPost("{sessionId:guid}/start")]
@@ -49,11 +71,18 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
         [FromBody] JoinSessionRequest request,
         CancellationToken cancellationToken)
     {
-        var response = await playerSessionService.StartSessionAsync(
-            sessionId,
-            ResolveIdentity(request.DisplayName, request.GuestActorId),
-            cancellationToken);
-        return Ok(response);
+        try
+        {
+            var response = await playerSessionService.StartSessionAsync(
+                sessionId,
+                ResolveIdentity(request.DisplayName, request.GuestActorId),
+                cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex) when (TryMapSessionError(ex, out var mapped))
+        {
+            return mapped;
+        }
     }
 
     [HttpGet("{sessionId:guid}")]
@@ -63,11 +92,18 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
         [FromQuery] string? guestActorId,
         CancellationToken cancellationToken)
     {
-        var response = await playerSessionService.GetSessionAsync(
-            sessionId,
-            ResolveIdentity(displayName, guestActorId),
-            cancellationToken);
-        return Ok(response);
+        try
+        {
+            var response = await playerSessionService.GetSessionAsync(
+                sessionId,
+                ResolveIdentity(displayName, guestActorId),
+                cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex) when (TryMapSessionError(ex, out var mapped))
+        {
+            return mapped;
+        }
     }
 
     private PlayerIdentity ResolveIdentity(string? displayName, string? guestActorId)
@@ -97,4 +133,29 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
             IsAuthenticated = false
         };
     }
+
+    private bool TryMapSessionError(Exception exception, out ActionResult mapped)
+    {
+        mapped = exception switch
+        {
+            SessionNotFoundException => BuildProblem(StatusCodes.Status404NotFound, "Session not found", exception.Message),
+            RoomNotFoundException => BuildProblem(StatusCodes.Status404NotFound, "Room not found", exception.Message),
+            PublishedRoomNotFoundException => BuildProblem(StatusCodes.Status404NotFound, "Published room not found", exception.Message),
+            NoPublishedRoomAvailableException => BuildProblem(StatusCodes.Status404NotFound, "No published room available", exception.Message),
+            SessionAccessDeniedException => BuildProblem(StatusCodes.Status403Forbidden, "Session access denied", exception.Message),
+            SessionServiceException => BuildProblem(StatusCodes.Status400BadRequest, "Session request failed", exception.Message),
+            UnauthorizedAccessException => BuildProblem(StatusCodes.Status403Forbidden, "Unauthorized", exception.Message),
+            _ => null!
+        };
+
+        return mapped is not null;
+    }
+
+    private ObjectResult BuildProblem(int statusCode, string title, string detail)
+        => StatusCode(statusCode, new ProblemDetails
+        {
+            Status = statusCode,
+            Title = title,
+            Detail = detail
+        });
 }

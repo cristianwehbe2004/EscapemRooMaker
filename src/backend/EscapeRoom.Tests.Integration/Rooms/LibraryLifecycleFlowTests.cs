@@ -45,20 +45,20 @@ public class LibraryLifecycleFlowTests
 
         await creatorService.PublishAsync(roomId, creatorId, isAdmin: false);
 
-        var listAfterPublish = await libraryService.GetPublishedRoomsAsync("lifecycle", "newest", 1, 20, playerId);
+        var listAfterPublish = await libraryService.GetPublishedRoomsAsync("lifecycle", "newest", null, 1, 20, playerId);
         listAfterPublish.Total.Should().Be(1);
 
         var rated = await libraryService.UpsertRoomRatingAsync(roomId, 5, playerId);
         rated.AverageRating.Should().Be(5);
         rated.RatingCount.Should().Be(1);
 
-        var listAfterRating = await libraryService.GetPublishedRoomsAsync("lifecycle", "rating", 1, 20, playerId);
+        var listAfterRating = await libraryService.GetPublishedRoomsAsync("lifecycle", "rating", null, 1, 20, playerId);
         listAfterRating.Items.Should().ContainSingle();
         listAfterRating.Items[0].ViewerRating.Should().Be(5);
         listAfterRating.Items[0].AverageRating.Should().Be(5);
 
         await libraryService.UnpublishAsync(roomId);
-        var listAfterUnpublish = await libraryService.GetPublishedRoomsAsync("lifecycle", "newest", 1, 20, playerId);
+        var listAfterUnpublish = await libraryService.GetPublishedRoomsAsync("lifecycle", "newest", null, 1, 20, playerId);
         listAfterUnpublish.Total.Should().Be(0);
     }
 }

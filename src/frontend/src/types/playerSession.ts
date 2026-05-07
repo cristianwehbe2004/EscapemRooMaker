@@ -25,4 +25,6 @@ export type PlayerSessionSummary = {
   gmJoinPath: string;
   actorId: string;
   displayName: string;
+  joinMode: "player" | "spectator" | string;
+  canSubmitActions: boolean;
 };

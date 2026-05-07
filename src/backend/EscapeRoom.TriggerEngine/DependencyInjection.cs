@@ -21,6 +21,7 @@ public static class DependencyInjection
         services.AddSingleton<TargetEqualsConditionEvaluator>();
         services.AddSingleton<InventoryHasItemConditionEvaluator>();
         services.AddSingleton<StateValueEqualsConditionEvaluator>();
+        services.AddSingleton<PayloadValueEqualsConditionEvaluator>();
         services.AddSingleton<AllTrueCombinatorEvaluator>();
         services.AddSingleton<AnyTrueCombinatorEvaluator>();
         services.AddSingleton<EmitMessageEffectExecutor>();

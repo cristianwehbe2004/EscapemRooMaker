@@ -31,7 +31,7 @@ public class LibraryServiceTests
 
         await using var context = new AppDbContext(dbOptions);
         var service = new LibraryService(context);
-        var response = await service.GetPublishedRoomsAsync("a", "rating", 1, 20, null);
+        var response = await service.GetPublishedRoomsAsync("a", "rating", null, 1, 20, null);
 
         response.Total.Should().Be(2);
         response.Items.Should().HaveCount(2);
@@ -99,7 +99,7 @@ public class LibraryServiceTests
         var service = new LibraryService(context);
         await service.UnpublishAsync(roomId);
 
-        var response = await service.GetPublishedRoomsAsync(null, "newest", 1, 20, null);
+        var response = await service.GetPublishedRoomsAsync(null, "newest", null, 1, 20, null);
         response.Total.Should().Be(0);
     }
 }

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using EscapeRoom.Application.Realtime.Contracts;
 using EscapeRoom.Application.Sessions;
 using EscapeRoom.Application.Sessions.Contracts;
@@ -13,9 +15,9 @@ public class PlayerSessionService(
     AppDbContext dbContext,
     ISessionStateStore sessionStateStore) : IPlayerSessionService
 {
-    private const int DefaultDurationMinutes = 60;
-    private const int MinDurationMinutes = 5;
-    private const int MaxDurationMinutes = 180;
+    private const int ForcedDurationMinutes = 10;
+    private const string JoinModePlayer = "player";
+    private const string JoinModeSpectator = "spectator";
 
     public async Task<PlayerSessionSummary> CreateSessionAsync(
         CreateSessionRequest request,
@@ -24,23 +26,23 @@ public class PlayerSessionService(
     {
         var room = await ResolvePublishedRoomAsync(request.RoomId, cancellationToken);
         var now = DateTime.UtcNow;
-        var duration = NormalizeDuration(request.DurationMinutes);
         var session = new GameSession
         {
             RoomId = room.Id,
             Status = SessionStatus.Pending,
             StartedAtUtc = now,
             LastActivityAtUtc = now,
-            DurationMinutes = duration,
+            DurationMinutes = ForcedDurationMinutes,
             HostActorId = identity.ActorId,
             IsQuickPlay = false
         };
         session.StateSnapshot = SessionStateFactory.BuildInitialState(room, session, now);
+        UpsertParticipantInState(session, room, identity, now, new JoinAccess(JoinModePlayer, true));
 
         dbContext.Sessions.Add(session);
         await dbContext.SaveChangesAsync(cancellationToken);
         await SaveRealtimeSnapshotAsync(session, now, cancellationToken);
-        return BuildSummary(room, session, identity, now);
+        return BuildSummary(room, session, identity, now, new JoinAccess(JoinModePlayer, true));
     }
 
     public async Task<PlayerSessionSummary> QuickStartAsync(
@@ -50,24 +52,24 @@ public class PlayerSessionService(
     {
         var room = await ResolvePublishedRoomAsync(request.RoomId, cancellationToken);
         var now = DateTime.UtcNow;
-        var duration = NormalizeDuration(request.DurationMinutes);
         var session = new GameSession
         {
             RoomId = room.Id,
             Status = SessionStatus.Active,
             StartedAtUtc = now,
             LastActivityAtUtc = now,
-            DurationMinutes = duration,
-            EndsAtUtc = now.AddMinutes(duration),
+            DurationMinutes = ForcedDurationMinutes,
+            EndsAtUtc = now.AddMinutes(ForcedDurationMinutes),
             HostActorId = identity.ActorId,
             IsQuickPlay = true
         };
         session.StateSnapshot = SessionStateFactory.BuildInitialState(room, session, now);
+        UpsertParticipantInState(session, room, identity, now, new JoinAccess(JoinModePlayer, true));
 
         dbContext.Sessions.Add(session);
         await dbContext.SaveChangesAsync(cancellationToken);
         await SaveRealtimeSnapshotAsync(session, now, cancellationToken);
-        return BuildSummary(room, session, identity, now);
+        return BuildSummary(room, session, identity, now, new JoinAccess(JoinModePlayer, true));
     }
 
     public async Task<PlayerSessionSummary> JoinSessionAsync(
@@ -78,7 +80,17 @@ public class PlayerSessionService(
     {
         var (session, room) = await GetSessionWithRoomAsync(sessionId, cancellationToken);
         await RefreshExpirationAsync(session, room, cancellationToken);
-        return BuildSummary(room, session, identity, DateTime.UtcNow);
+
+        var now = DateTime.UtcNow;
+        var access = ResolveJoinAccess(session, identity.ActorId);
+        var changed = UpsertParticipantInState(session, room, identity, now, access);
+        if (changed)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await SaveRealtimeSnapshotAsync(session, now, cancellationToken);
+        }
+
+        return BuildSummary(room, session, identity, now, access);
     }
 
     public async Task<PlayerSessionSummary> StartSessionAsync(
@@ -89,19 +101,20 @@ public class PlayerSessionService(
         var (session, room) = await GetSessionWithRoomAsync(sessionId, cancellationToken);
         if (session.Status == SessionStatus.Active)
         {
-            return BuildSummary(room, session, identity, DateTime.UtcNow);
+            var activeAccess = ResolveJoinAccess(session, identity.ActorId);
+            return BuildSummary(room, session, identity, DateTime.UtcNow, activeAccess);
         }
 
         if (session.Status != SessionStatus.Pending)
         {
-            throw new InvalidOperationException($"Session '{sessionId}' cannot be started from status '{session.Status}'.");
+            throw new SessionServiceException($"Session '{sessionId}' cannot be started from status '{session.Status}'.");
         }
 
         if (!string.IsNullOrWhiteSpace(session.HostActorId) &&
             !session.HostActorId.Equals(identity.ActorId, StringComparison.OrdinalIgnoreCase) &&
             identity.IsAuthenticated)
         {
-            throw new UnauthorizedAccessException("Only the session host can start this session.");
+            throw new SessionAccessDeniedException("Only the session host can start this session.");
         }
 
         var now = DateTime.UtcNow;
@@ -110,10 +123,11 @@ public class PlayerSessionService(
         session.LastActivityAtUtc = now;
         session.EndsAtUtc = now.AddMinutes(session.DurationMinutes);
         session.StateSnapshot = SessionStateFactory.WithSessionState(session.StateSnapshot, room, session, now);
+        UpsertParticipantInState(session, room, identity, now, new JoinAccess(JoinModePlayer, true));
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await SaveRealtimeSnapshotAsync(session, now, cancellationToken);
-        return BuildSummary(room, session, identity, now);
+        return BuildSummary(room, session, identity, now, new JoinAccess(JoinModePlayer, true));
     }
 
     public async Task<PlayerSessionSummary> GetSessionAsync(
@@ -123,25 +137,56 @@ public class PlayerSessionService(
     {
         var (session, room) = await GetSessionWithRoomAsync(sessionId, cancellationToken);
         await RefreshExpirationAsync(session, room, cancellationToken);
-        return BuildSummary(room, session, identity, DateTime.UtcNow);
+        var access = ResolveJoinAccess(session, identity.ActorId);
+        return BuildSummary(room, session, identity, DateTime.UtcNow, access);
+    }
+
+    public async Task<bool> CanSubmitActionsAsync(
+        Guid sessionId,
+        string actorId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(actorId))
+        {
+            return false;
+        }
+
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(x => x.Id == sessionId, cancellationToken)
+            ?? throw new SessionNotFoundException(sessionId);
+
+        if (string.Equals(session.HostActorId, actorId, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var participant = FindParticipantAccess(session.StateSnapshot, actorId);
+        if (participant is not null)
+        {
+            return participant.Value.CanSubmitActions;
+        }
+
+        return session.Status != SessionStatus.Active;
     }
 
     private async Task<Room> ResolvePublishedRoomAsync(Guid? roomId, CancellationToken cancellationToken)
     {
         var query = dbContext.Rooms.Where(x => x.IsPublished);
-        var room = roomId.HasValue
-            ? await query.FirstOrDefaultAsync(x => x.Id == roomId.Value, cancellationToken)
-            : await query.OrderBy(x => x.CreatedAtUtc).FirstOrDefaultAsync(cancellationToken);
+        if (roomId.HasValue)
+        {
+            var selected = await query.FirstOrDefaultAsync(x => x.Id == roomId.Value, cancellationToken);
+            return selected ?? throw new PublishedRoomNotFoundException(roomId.Value);
+        }
 
-        return room ?? throw new InvalidOperationException("No published room is available to play.");
+        var room = await query.OrderBy(x => x.CreatedAtUtc).FirstOrDefaultAsync(cancellationToken);
+        return room ?? throw new NoPublishedRoomAvailableException();
     }
 
     private async Task<(GameSession Session, Room Room)> GetSessionWithRoomAsync(Guid sessionId, CancellationToken cancellationToken)
     {
         var session = await dbContext.Sessions.FirstOrDefaultAsync(x => x.Id == sessionId, cancellationToken)
-            ?? throw new InvalidOperationException($"Session '{sessionId}' was not found.");
+            ?? throw new SessionNotFoundException(sessionId);
         var room = await dbContext.Rooms.FirstOrDefaultAsync(x => x.Id == session.RoomId, cancellationToken)
-            ?? throw new InvalidOperationException($"Room '{session.RoomId}' was not found.");
+            ?? throw new RoomNotFoundException(session.RoomId);
         return (session, room);
     }
 
@@ -172,7 +217,7 @@ public class PlayerSessionService(
         }, cancellationToken);
     }
 
-    private static PlayerSessionSummary BuildSummary(Room room, GameSession session, PlayerIdentity identity, DateTime now)
+    private static PlayerSessionSummary BuildSummary(Room room, GameSession session, PlayerIdentity identity, DateTime now, JoinAccess access)
         => new()
         {
             SessionId = session.Id,
@@ -189,9 +234,127 @@ public class PlayerSessionService(
             PlayerJoinPath = $"/player?sessionId={session.Id}",
             GmJoinPath = $"/gm?sessionId={session.Id}",
             ActorId = identity.ActorId,
-            DisplayName = identity.DisplayName
+            DisplayName = identity.DisplayName,
+            JoinMode = access.JoinMode,
+            CanSubmitActions = access.CanSubmitActions
         };
 
-    private static int NormalizeDuration(int? durationMinutes)
-        => Math.Clamp(durationMinutes ?? DefaultDurationMinutes, MinDurationMinutes, MaxDurationMinutes);
+    private static JoinAccess ResolveJoinAccess(GameSession session, string actorId)
+    {
+        if (string.Equals(session.HostActorId, actorId, StringComparison.OrdinalIgnoreCase))
+        {
+            return new JoinAccess(JoinModePlayer, true);
+        }
+
+        var participant = FindParticipantAccess(session.StateSnapshot, actorId);
+        if (participant is not null)
+        {
+            return participant.Value;
+        }
+
+        if (session.Status == SessionStatus.Active)
+        {
+            return new JoinAccess(JoinModeSpectator, false);
+        }
+
+        return new JoinAccess(JoinModePlayer, true);
+    }
+
+    private static bool UpsertParticipantInState(
+        GameSession session,
+        Room room,
+        PlayerIdentity identity,
+        DateTime now,
+        JoinAccess access)
+    {
+        var state = ParseState(session.StateSnapshot);
+        var sessionNode = state["session"] as JsonObject ?? new JsonObject();
+        state["session"] = sessionNode;
+
+        var participants = sessionNode["participants"] as JsonArray ?? new JsonArray();
+        sessionNode["participants"] = participants;
+
+        var participant = participants
+            .OfType<JsonObject>()
+            .FirstOrDefault(entry => string.Equals(entry["actorId"]?.GetValue<string>(), identity.ActorId, StringComparison.OrdinalIgnoreCase));
+
+        var changed = false;
+        if (participant is null)
+        {
+            participant = new JsonObject();
+            participants.Add(participant);
+            changed = true;
+        }
+
+        changed |= SetString(participant, "actorId", identity.ActorId);
+        changed |= SetString(participant, "displayName", identity.DisplayName);
+        changed |= SetString(participant, "joinMode", access.JoinMode);
+        changed |= SetBool(participant, "canSubmitActions", access.CanSubmitActions);
+        changed |= SetString(participant, "lastSeenAtUtc", now.ToString("O"));
+        if (participant["joinedAtUtc"] is null)
+        {
+            participant["joinedAtUtc"] = now.ToString("O");
+            changed = true;
+        }
+
+        if (!changed)
+        {
+            return false;
+        }
+
+        session.StateSnapshot = state.ToJsonString(JsonOptions());
+        session.StateSnapshot = SessionStateFactory.WithSessionState(session.StateSnapshot, room, session, now);
+        return true;
+    }
+
+    private static JoinAccess? FindParticipantAccess(string stateSnapshot, string actorId)
+    {
+        var state = ParseState(stateSnapshot);
+        if (state["session"] is not JsonObject sessionNode || sessionNode["participants"] is not JsonArray participants)
+        {
+            return null;
+        }
+
+        var participant = participants
+            .OfType<JsonObject>()
+            .FirstOrDefault(entry => string.Equals(entry["actorId"]?.GetValue<string>(), actorId, StringComparison.OrdinalIgnoreCase));
+
+        if (participant is null)
+        {
+            return null;
+        }
+
+        var joinMode = participant["joinMode"]?.GetValue<string>() ?? JoinModePlayer;
+        var canSubmitActions = participant["canSubmitActions"]?.GetValue<bool>() ?? true;
+        return new JoinAccess(joinMode, canSubmitActions);
+    }
+
+    private static JsonObject ParseState(string json)
+        => JsonNode.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json) as JsonObject ?? new JsonObject();
+
+    private static bool SetString(JsonObject target, string key, string value)
+    {
+        if (string.Equals(target[key]?.GetValue<string>(), value, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        target[key] = value;
+        return true;
+    }
+
+    private static bool SetBool(JsonObject target, string key, bool value)
+    {
+        if (target[key]?.GetValue<bool>() == value)
+        {
+            return false;
+        }
+
+        target[key] = value;
+        return true;
+    }
+
+    private static JsonSerializerOptions JsonOptions() => new(JsonSerializerDefaults.Web);
+
+    private readonly record struct JoinAccess(string JoinMode, bool CanSubmitActions);
 }

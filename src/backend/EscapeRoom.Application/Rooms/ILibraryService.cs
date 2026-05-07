@@ -7,6 +7,7 @@ public interface ILibraryService
     Task<LibraryRoomsResponse> GetPublishedRoomsAsync(
         string? query,
         string? sort,
+        bool? featuredOnly,
         int page,
         int pageSize,
         Guid? viewerUserId,

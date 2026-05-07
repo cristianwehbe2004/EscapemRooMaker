@@ -9,6 +9,9 @@ public class LibraryRoomListItemDto
     public int RatingCount { get; set; }
     public double AverageRating { get; set; }
     public int? ViewerRating { get; set; }
+    public bool IsFeatured { get; set; }
+    public string? Difficulty { get; set; }
+    public int? EstimatedMinutes { get; set; }
 }
 
 public class LibraryRoomsResponse

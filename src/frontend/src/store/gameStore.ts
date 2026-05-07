@@ -372,6 +372,11 @@ const normalizeSessionState = (value: unknown): GameStateData["session"] | undef
     serverTimeUtc: asOptionalString(getRecordValue(record, "serverTimeUtc")),
     remainingSeconds: asNumber(getRecordValue(record, "remainingSeconds")),
     isQuickPlay: typeof getRecordValue(record, "isQuickPlay") === "boolean" ? (getRecordValue(record, "isQuickPlay") as boolean) : undefined,
+    joinMode: asOptionalString(getRecordValue(record, "joinMode")),
+    canSubmitActions:
+      typeof getRecordValue(record, "canSubmitActions") === "boolean"
+        ? (getRecordValue(record, "canSubmitActions") as boolean)
+        : undefined,
   };
 };
 

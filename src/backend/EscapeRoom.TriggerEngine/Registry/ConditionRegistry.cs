@@ -7,14 +7,16 @@ public class ConditionRegistry(
     ActionTypeConditionEvaluator actionTypeConditionEvaluator,
     TargetEqualsConditionEvaluator targetEqualsConditionEvaluator,
     InventoryHasItemConditionEvaluator inventoryHasItemConditionEvaluator,
-    StateValueEqualsConditionEvaluator stateValueEqualsConditionEvaluator) : IConditionRegistry
+    StateValueEqualsConditionEvaluator stateValueEqualsConditionEvaluator,
+    PayloadValueEqualsConditionEvaluator payloadValueEqualsConditionEvaluator) : IConditionRegistry
 {
     private readonly Dictionary<string, IConditionEvaluator> _evaluators = new(StringComparer.OrdinalIgnoreCase)
     {
         ["actionTypeEquals"] = actionTypeConditionEvaluator,
         ["targetEquals"] = targetEqualsConditionEvaluator,
         ["inventoryHasItem"] = inventoryHasItemConditionEvaluator,
-        ["stateValueEquals"] = stateValueEqualsConditionEvaluator
+        ["stateValueEquals"] = stateValueEqualsConditionEvaluator,
+        ["payloadValueEquals"] = payloadValueEqualsConditionEvaluator
     };
 
     public IConditionEvaluator Get(string type)

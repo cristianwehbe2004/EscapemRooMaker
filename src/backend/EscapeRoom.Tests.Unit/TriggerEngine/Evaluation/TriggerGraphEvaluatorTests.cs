@@ -20,7 +20,8 @@ public class TriggerGraphEvaluatorTests
                 new ActionTypeConditionEvaluator(),
                 new TargetEqualsConditionEvaluator(),
                 new InventoryHasItemConditionEvaluator(),
-                new StateValueEqualsConditionEvaluator()),
+                new StateValueEqualsConditionEvaluator(),
+                new PayloadValueEqualsConditionEvaluator()),
             new CombinatorRegistry(new AllTrueCombinatorEvaluator(), new AnyTrueCombinatorEvaluator()),
             new EffectRegistry(
                 new EmitMessageEffectExecutor(),

@@ -6,6 +6,9 @@ export type LibraryRoomListItemDto = {
   ratingCount: number;
   averageRating: number;
   viewerRating?: number | null;
+  isFeatured: boolean;
+  difficulty?: string | null;
+  estimatedMinutes?: number | null;
 };
 
 export type LibraryRoomsResponse = {

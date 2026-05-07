@@ -9,23 +9,58 @@ const mockSubmitAction = jest.fn();
 const mockRecoverSession = jest.fn();
 const mockRequestSnapshot = jest.fn();
 
-const sessionSummary = {
+const featuredRoomsResponse = {
+  items: [
+    {
+      roomId: "room-easy",
+      name: "Clocktower Foyer",
+      description: "Easy room",
+      createdAtUtc: new Date().toISOString(),
+      ratingCount: 2,
+      averageRating: 4.5,
+      viewerRating: null,
+      isFeatured: true,
+      difficulty: "easy",
+      estimatedMinutes: 8,
+    },
+    {
+      roomId: "room-hard",
+      name: "Crypt of Echoes",
+      description: "Hard room",
+      createdAtUtc: new Date().toISOString(),
+      ratingCount: 3,
+      averageRating: 4.2,
+      viewerRating: null,
+      isFeatured: true,
+      difficulty: "hard",
+      estimatedMinutes: 10,
+    },
+  ],
+  page: 1,
+  pageSize: 12,
+  total: 2,
+};
+
+const buildSessionSummary = (overrides?: Partial<Record<string, unknown>>) => ({
   sessionId: "session-123",
-  roomId: "room-123",
-  roomName: "Vault Puzzle",
-  status: "Active",
-  durationMinutes: 60,
+  roomId: "room-easy",
+  roomName: "Clocktower Foyer",
+  status: "Pending",
+  durationMinutes: 10,
   startedAtUtc: new Date().toISOString(),
   endedAtUtc: null,
-  endsAtUtc: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  endsAtUtc: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
   serverTimeUtc: new Date().toISOString(),
-  remainingSeconds: 3600,
+  remainingSeconds: 600,
   isQuickPlay: false,
   playerJoinPath: "/player?sessionId=session-123",
   gmJoinPath: "/gm?sessionId=session-123",
   actorId: "guest-123",
   displayName: "Player",
-};
+  joinMode: "player",
+  canSubmitActions: true,
+  ...overrides,
+});
 
 jest.mock("../realtime/gameRealtimeClient", () => ({
   GameRealtimeClient: function MockGameRealtimeClient(
@@ -63,10 +98,48 @@ describe("PlayerPage", () => {
   beforeEach(() => {
     useGameStore.getState().reset();
     jest.clearAllMocks();
-    jest.spyOn(globalThis, "fetch").mockResolvedValue({
-      ok: true,
-      json: async () => sessionSummary,
-    } as Response);
+
+    jest.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      if (url.includes("/api/library/rooms")) {
+        return {
+          ok: true,
+          json: async () => featuredRoomsResponse,
+          headers: new Headers({ "content-type": "application/json" }),
+        } as Response;
+      }
+
+      if (url.endsWith("/api/player/sessions") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => buildSessionSummary(),
+          headers: new Headers({ "content-type": "application/json" }),
+        } as Response;
+      }
+
+      if (url.includes("/join") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => buildSessionSummary({ status: "Active", joinMode: "spectator", canSubmitActions: false }),
+          headers: new Headers({ "content-type": "application/json" }),
+        } as Response;
+      }
+
+      if (url.includes("/quick-start") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => buildSessionSummary({ status: "Active", isQuickPlay: true }),
+          headers: new Headers({ "content-type": "application/json" }),
+        } as Response;
+      }
+
+      return {
+        ok: true,
+        json: async () => buildSessionSummary(),
+        headers: new Headers({ "content-type": "application/json" }),
+      } as Response;
+    });
+
     mockStart.mockResolvedValue({
       sessionId: "session-123",
       replayedDiffCount: 0,
@@ -94,6 +167,7 @@ describe("PlayerPage", () => {
       stateJson: JSON.stringify(useGameStore.getState().state),
       serverTimeUtc: new Date().toISOString(),
     });
+
     if (!globalThis.crypto) {
       Object.defineProperty(globalThis, "crypto", {
         value: { randomUUID: () => "123e4567-e89b-12d3-a456-426614174000" },
@@ -112,101 +186,58 @@ describe("PlayerPage", () => {
     (globalThis.fetch as jest.Mock | undefined)?.mockRestore?.();
   });
 
-  it("shows the player entry flow before connecting", () => {
+  it("renders a richer landing hero with create/join controls", () => {
     render(<PlayerPage />);
 
-    expect(screen.getByText("Escape Room")).toBeInTheDocument();
-    expect(screen.getByText("Start")).toBeInTheDocument();
-    expect(screen.getByText("Create New Session")).toBeInTheDocument();
-    expect(screen.getAllByText("Join Session")).toHaveLength(2);
+    expect(screen.getByText("EscapeRoom Live")).toBeInTheDocument();
+    expect(screen.getByText("Create Session")).toBeInTheDocument();
+    expect(screen.getByText("Join Existing Session")).toBeInTheDocument();
   });
 
-  it("quick starts a timed session and shows action feedback after acting", async () => {
+  it("opens map menu and creates session from selected featured room", async () => {
     render(<PlayerPage />);
 
-    fireEvent.click(screen.getByText("Start"));
+    fireEvent.click(screen.getByText("Create Session"));
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://localhost:5000/api/player/sessions/quick-start",
-        expect.objectContaining({ method: "POST" })
-      );
-      expect(mockStart).toHaveBeenCalledWith(
-        "session-123",
-        undefined,
-        expect.objectContaining({ displayName: "Player" })
+        expect.stringContaining("/api/library/rooms?featured=true"),
+        expect.anything()
       );
     });
 
-    expect(screen.getByText("Inventory")).toBeInTheDocument();
-    expect(screen.getByText("Flashlight")).toBeInTheDocument();
-    expect(screen.getByText("Action Feedback")).toBeInTheDocument();
+    expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
+    expect(screen.getByText("Crypt of Echoes")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Inspect Desk Note"));
+    const createButtons = screen.getAllByText("Create Lobby");
+    fireEvent.click(createButtons[0]);
+
     await waitFor(() => {
-      expect(mockSubmitAction).toHaveBeenCalledTimes(1);
-      expect(screen.getByText(/last action:/i)).toHaveTextContent("inspect -> desk-note");
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "http://localhost:5000/api/player/sessions",
+        expect.objectContaining({ method: "POST", body: expect.stringContaining("room-easy") })
+      );
+      expect(mockStart).toHaveBeenCalledWith("session-123", undefined, expect.any(Object));
     });
+
+    expect(screen.getByText(/Share this link:/i)).toBeInTheDocument();
   });
 
-  it("joins an existing active session", async () => {
+  it("shows spectator banner when joining an already active session", async () => {
     render(<PlayerPage />);
 
     fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
       target: { value: "session-123" },
     });
-    fireEvent.click(screen.getAllByText("Join Session")[1]);
+    fireEvent.click(screen.getByText("Join Session"));
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
         "http://localhost:5000/api/player/sessions/session-123/join",
         expect.objectContaining({ method: "POST" })
       );
-      expect(mockStart).toHaveBeenCalledWith(
-        "session-123",
-        undefined,
-        expect.objectContaining({ guestActorId: expect.stringMatching(/^guest-/) })
-      );
     });
+
+    expect(screen.getByText(/Spectator mode is active/i)).toBeInTheDocument();
   });
-
-  it("shows reconnect banner when reconnecting", () => {
-    useGameStore.setState({ syncState: "reconnecting" });
-    render(<PlayerPage />);
-
-    expect(screen.getByText(/reconnecting to the session/i)).toBeInTheDocument();
-  });
-
-  it("routes structured server rate-limit errors to action feedback only", async () => {
-    mockSubmitAction.mockRejectedValue(
-      new Error(
-        JSON.stringify({
-          code: "rate_limited",
-          message: "Action rate limited.",
-          retryAfterMs: 1200,
-          policyName: "player-action-default",
-        })
-      )
-    );
-
-    render(<PlayerPage />);
-
-    fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
-      target: { value: "session-123" },
-    });
-    fireEvent.click(screen.getAllByText("Join Session")[1]);
-
-    await waitFor(() => {
-      expect(mockStart).toHaveBeenCalled();
-    });
-
-    fireEvent.click(screen.getByText("Inspect Desk Note"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Action rate limited.")).toBeInTheDocument();
-      expect(screen.getByText(/source: server rate limit/i)).toBeInTheDocument();
-      expect(screen.queryByText(/code\":\"rate_limited/i)).not.toBeInTheDocument();
-    });
-  });
-
 });

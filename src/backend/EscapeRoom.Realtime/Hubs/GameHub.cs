@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using EscapeRoom.Application.Realtime;
 using EscapeRoom.Application.Realtime.Contracts;
+using EscapeRoom.Application.Sessions;
 using EscapeRoom.Application.Triggering;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
@@ -13,6 +14,7 @@ namespace EscapeRoom.Realtime.Hubs;
 public class GameHub(
     ISessionActionProcessor sessionActionProcessor,
     ISessionStateStore sessionStateStore,
+    IPlayerSessionService playerSessionService,
     IPlayerPresenceTracker playerPresenceTracker,
     IGmPanelQueryService gmPanelQueryService,
     IActionRateLimiter actionRateLimiter) : Hub
@@ -92,6 +94,12 @@ public class GameHub(
         if (string.IsNullOrWhiteSpace(action.Actor))
         {
             action.Actor = ResolveActor();
+        }
+
+        var canSubmitActions = await playerSessionService.CanSubmitActionsAsync(sessionId, action.Actor, cancellationToken);
+        if (!canSubmitActions)
+        {
+            throw new HubException("Action blocked: actor is currently in spectator mode.");
         }
 
         var rateLimitDecision = actionRateLimiter.Evaluate(sessionId, action, new ActionRateLimitContext

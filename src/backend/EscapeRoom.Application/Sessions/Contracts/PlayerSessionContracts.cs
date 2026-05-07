@@ -37,4 +37,6 @@ public class PlayerSessionSummary
     public string GmJoinPath { get; set; } = string.Empty;
     public string ActorId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public string JoinMode { get; set; } = "player";
+    public bool CanSubmitActions { get; set; } = true;
 }

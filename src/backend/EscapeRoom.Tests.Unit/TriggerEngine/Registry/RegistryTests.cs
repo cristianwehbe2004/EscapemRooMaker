@@ -19,7 +19,8 @@ public class RegistryTests
                 new ActionTypeConditionEvaluator(),
                 new TargetEqualsConditionEvaluator(),
                 new InventoryHasItemConditionEvaluator(),
-                new StateValueEqualsConditionEvaluator());
+                new StateValueEqualsConditionEvaluator(),
+                new PayloadValueEqualsConditionEvaluator());
         }
 
         [Fact]

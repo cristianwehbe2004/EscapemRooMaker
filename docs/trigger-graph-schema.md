@@ -96,6 +96,7 @@ Execution policy for effect nodes.
 | `targetEquals` | `expectedTarget` or `targetId` | Matches when the player action target matches a hotspot/object id |
 | `inventoryHasItem` | `itemId` | Matches when the session inventory contains an item id |
 | `stateValueEquals` | `key` or `path`, `value` | Matches when a dot-path value in session state equals the configured value |
+| `payloadValueEquals` | `key`, `value` | Matches when action payload contains a specific key/value pair (for example `itemId`) |
 
 ### Combinators
 | Type | Description |

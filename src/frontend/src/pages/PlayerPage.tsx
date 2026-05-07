@@ -8,13 +8,15 @@ import { GameRealtimeClient } from "../realtime/gameRealtimeClient";
 import { runSessionRecovery } from "../realtime/recoveryController";
 import { diffNeedsSnapshotResync, useGameStore } from "../store/gameStore";
 import { ActionError, parseActionError } from "../types/actionError";
+import { LibraryRoomListItemDto, LibraryRoomsResponse } from "../types/library";
 import { CreateSessionRequest, JoinSessionRequest, PlayerSessionSummary } from "../types/playerSession";
 import { InventoryCombineActionPayload, InventoryUseActionPayload, PlayerActionEnvelope } from "../types/realtime";
 
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5000";
 const guestActorStorageKey = "escape-room.guestActorId";
+const fixedSessionMinutes = 10;
 
-type PlayerPhase = "home" | "lobby" | "game";
+type PlayerPhase = "home" | "map" | "lobby" | "game";
 
 const ensureGuestActorId = (): string => {
   if (typeof window === "undefined") {
@@ -44,8 +46,6 @@ const PlayerPage: React.FC = () => {
   const [displayName, setDisplayName] = useState("Player");
   const [accessToken, setAccessToken] = useState("");
   const [sessionInput, setSessionInput] = useState(sessionIdFromUrl ?? "");
-  const [roomIdInput, setRoomIdInput] = useState("");
-  const [durationMinutes, setDurationMinutes] = useState(60);
   const [guestActorId] = useState(ensureGuestActorId);
   const [playerSession, setPlayerSession] = useState<PlayerSessionSummary | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -61,6 +61,9 @@ const PlayerPage: React.FC = () => {
   const [trackedCooldownKeys, setTrackedCooldownKeys] = useState<Record<string, { label: string }>>({});
   const [cooldownTick, setCooldownTick] = useState(0);
   const [timerTick, setTimerTick] = useState(0);
+  const [featuredRooms, setFeaturedRooms] = useState<LibraryRoomListItemDto[]>([]);
+  const [featuredLoading, setFeaturedLoading] = useState(false);
+  const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const { runWithCooldown, getRemainingMs } = useActionCooldown(900);
   const lastSnapshotSyncAtRef = useRef(0);
   const clientRef = useRef<GameRealtimeClient | null>(null);
@@ -138,7 +141,7 @@ const PlayerPage: React.FC = () => {
                 onSynced: showSyncedToast,
               });
             } catch {
-              // Connection error is set by recovery controller when fallback snapshot fails.
+              // Recovery controller sets a connection error when needed.
             }
           },
           onDisconnected: () => setConnectionStatus({ connected: false }),
@@ -168,6 +171,21 @@ const PlayerPage: React.FC = () => {
     };
   }, [client]);
 
+  const resolveHttpError = async (response: Response): Promise<string> => {
+    const contentType = response.headers.get("content-type") ?? "";
+    if (contentType.includes("application/json")) {
+      try {
+        const body = (await response.json()) as { detail?: string; title?: string; message?: string };
+        return body.detail ?? body.message ?? body.title ?? `Request failed: ${response.status}`;
+      } catch {
+        return `Request failed: ${response.status}`;
+      }
+    }
+
+    const text = await response.text();
+    return text || `Request failed: ${response.status}`;
+  };
+
   const callSessionApi = async <T,>(path: string, method = "GET", body?: unknown): Promise<T> => {
     const response = await fetch(`${apiBaseUrl}${path}`, {
       method,
@@ -179,8 +197,7 @@ const PlayerPage: React.FC = () => {
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      throw new Error(text || `Request failed: ${response.status}`);
+      throw new Error(await resolveHttpError(response));
     }
 
     return (await response.json()) as T;
@@ -197,9 +214,8 @@ const PlayerPage: React.FC = () => {
     setLastActionLabel(`Joined session ${ack.sessionId}`);
   };
 
-  const createSessionBody = (): CreateSessionRequest => ({
-    roomId: roomIdInput.trim() || undefined,
-    durationMinutes,
+  const createSessionBody = (roomId: string): CreateSessionRequest => ({
+    roomId,
     displayName,
   });
 
@@ -208,12 +224,37 @@ const PlayerPage: React.FC = () => {
     guestActorId,
   });
 
-  const quickStart = async () => {
+  const loadFeaturedRooms = async () => {
+    setFeaturedLoading(true);
+    try {
+      const response = await callSessionApi<LibraryRoomsResponse>("/api/library/rooms?featured=true&sort=name&page=1&pageSize=12");
+      const rooms = response.items ?? [];
+      setFeaturedRooms(rooms);
+      if (!selectedRoomId && rooms.length > 0) {
+        setSelectedRoomId(rooms[0].roomId);
+      }
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : "Could not load featured rooms.");
+    } finally {
+      setFeaturedLoading(false);
+    }
+  };
+
+  const openMapMenu = async () => {
+    setConnectionError(null);
+    setPhase("map");
+    if (featuredRooms.length === 0) {
+      await loadFeaturedRooms();
+    }
+  };
+
+  const quickStartWithRoom = async (roomId: string) => {
     setConnectionError(null);
     setActionError(null);
     try {
-      const summary = await callSessionApi<PlayerSessionSummary>("/api/player/sessions/quick-start", "POST", createSessionBody());
+      const summary = await callSessionApi<PlayerSessionSummary>("/api/player/sessions/quick-start", "POST", createSessionBody(roomId));
       setPlayerSession(summary);
+      setSessionInput(summary.sessionId);
       setPhase("game");
       await connectRealtime(summary);
     } catch (error) {
@@ -221,11 +262,11 @@ const PlayerPage: React.FC = () => {
     }
   };
 
-  const createHostedSession = async () => {
+  const createHostedSessionWithRoom = async (roomId: string) => {
     setConnectionError(null);
     setActionError(null);
     try {
-      const summary = await callSessionApi<PlayerSessionSummary>("/api/player/sessions", "POST", createSessionBody());
+      const summary = await callSessionApi<PlayerSessionSummary>("/api/player/sessions", "POST", createSessionBody(roomId));
       setPlayerSession(summary);
       setSessionInput(summary.sessionId);
       setPhase("lobby");
@@ -365,6 +406,8 @@ const PlayerPage: React.FC = () => {
     }
   }, [clearInventoryIntent, selectedInventoryItemId, state.inventory]);
 
+  const canSubmitActions = (playerSession?.canSubmitActions ?? state.session?.canSubmitActions ?? true) && playerSession?.joinMode !== "spectator";
+
   const submitAction = async (
     actionType: string,
     targetId: string,
@@ -376,6 +419,14 @@ const PlayerPage: React.FC = () => {
   ) => {
     if (!sessionId) {
       setConnectionError("Join a session first.");
+      return;
+    }
+
+    if (!canSubmitActions) {
+      setActionError({
+        source: "network",
+        message: "You are spectating this active session. Action submission is disabled.",
+      });
       return;
     }
 
@@ -512,7 +563,7 @@ const PlayerPage: React.FC = () => {
   const remainingSeconds = useMemo(() => {
     void timerTick;
     if (status !== "Active") {
-      return sessionState?.remainingSeconds ?? playerSession?.remainingSeconds ?? durationMinutes * 60;
+      return sessionState?.remainingSeconds ?? playerSession?.remainingSeconds ?? fixedSessionMinutes * 60;
     }
 
     if (!endsAtUtc) {
@@ -520,14 +571,29 @@ const PlayerPage: React.FC = () => {
     }
 
     return Math.max(0, Math.ceil((new Date(endsAtUtc).getTime() - Date.now()) / 1000));
-  }, [durationMinutes, endsAtUtc, playerSession?.remainingSeconds, sessionState?.remainingSeconds, status, timerTick]);
+  }, [endsAtUtc, playerSession?.remainingSeconds, sessionState?.remainingSeconds, status, timerTick]);
   const isGameOver = status === "Completed" || status === "Expired" || status === "Cancelled";
 
-  const renderEntryControls = () => (
-    <section className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
-      <div className="rounded border border-slate-700 bg-slate-900 p-4">
-        <h1 className="text-2xl font-semibold">Escape Room</h1>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
+  const renderHero = () => (
+    <section className="grid gap-5 rounded-3xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 p-6 shadow-[0_0_40px_rgba(14,165,233,0.18)] lg:grid-cols-[1.2fr_0.8fr]">
+      <div>
+        <p className="text-xs uppercase tracking-[0.22em] text-sky-300">EscapeRoom Live</p>
+        <h1 className="mt-3 text-4xl font-semibold leading-tight text-slate-50">Choose a room. Beat it in 10 minutes.</h1>
+        <p className="mt-3 max-w-xl text-sm text-slate-300">
+          Create a solo or hosted session from two curated maps. Inventory interactions, lock logic, and realtime spectating are fully server-authoritative.
+        </p>
+        <div className="mt-6 flex flex-wrap gap-3">
+          <button onClick={() => void openMapMenu()} className="rounded-xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950">
+            Create Session
+          </button>
+          <a href="/library" className="rounded-xl border border-slate-500 px-5 py-3 text-sm text-slate-200">
+            Browse Full Library
+          </a>
+        </div>
+      </div>
+      <div className="rounded-2xl border border-slate-700 bg-slate-900/80 p-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-300">Join Existing Session</h2>
+        <div className="mt-3 grid gap-2">
           <input
             value={displayName}
             onChange={(event) => setDisplayName(event.target.value)}
@@ -541,34 +607,6 @@ const PlayerPage: React.FC = () => {
             className="rounded border border-slate-600 bg-slate-800 px-3 py-2"
           />
           <input
-            value={roomIdInput}
-            onChange={(event) => setRoomIdInput(event.target.value)}
-            placeholder="Optional room UUID"
-            className="rounded border border-slate-600 bg-slate-800 px-3 py-2"
-          />
-          <input
-            type="number"
-            min={5}
-            max={180}
-            value={durationMinutes}
-            onChange={(event) => setDurationMinutes(Number(event.target.value))}
-            className="rounded border border-slate-600 bg-slate-800 px-3 py-2"
-          />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-3">
-          <button onClick={quickStart} className="rounded bg-emerald-600 px-4 py-2 text-white">
-            Start
-          </button>
-          <button onClick={createHostedSession} className="rounded bg-blue-600 px-4 py-2 text-white">
-            Create New Session
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded border border-slate-700 bg-slate-900 p-4">
-        <h2 className="text-lg font-semibold">Join Session</h2>
-        <div className="mt-4 flex flex-col gap-3">
-          <input
             value={sessionInput}
             onChange={(event) => setSessionInput(event.target.value)}
             placeholder="Session UUID"
@@ -577,10 +615,70 @@ const PlayerPage: React.FC = () => {
           <button onClick={() => void joinHostedSession()} className="rounded bg-indigo-600 px-4 py-2 text-white">
             Join Session
           </button>
-          <a href="/library" className="text-sm text-sky-300">
-            Browse public rooms
-          </a>
         </div>
+      </div>
+    </section>
+  );
+
+  const renderMapMenu = () => (
+    <section className="rounded-3xl border border-slate-700 bg-slate-900/90 p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-2xl font-semibold">Choose Your Map</h2>
+          <p className="text-sm text-slate-300">All player sessions are fixed to {fixedSessionMinutes} minutes.</p>
+        </div>
+        <button onClick={() => void loadFeaturedRooms()} className="rounded border border-slate-500 px-3 py-2 text-sm text-slate-200">
+          Refresh Rooms
+        </button>
+      </div>
+
+      {featuredLoading && <p className="mt-4 text-sm text-slate-300">Loading featured rooms...</p>}
+
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        {featuredRooms.map((room) => {
+          const selected = selectedRoomId === room.roomId;
+          const difficulty = (room.difficulty ?? "unknown").toString().toLowerCase();
+          const chipClass =
+            difficulty === "hard"
+              ? "bg-rose-900/70 text-rose-200"
+              : difficulty === "easy"
+                ? "bg-emerald-900/70 text-emerald-200"
+                : "bg-slate-700 text-slate-200";
+
+          return (
+            <article
+              key={room.roomId}
+              className={`rounded-2xl border p-4 transition ${selected ? "border-sky-400 bg-slate-800" : "border-slate-700 bg-slate-900"}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-lg font-semibold">{room.name}</h3>
+                <span className={`rounded-full px-2 py-1 text-xs uppercase tracking-wider ${chipClass}`}>{difficulty}</span>
+              </div>
+              <p className="mt-2 text-sm text-slate-300">{room.description || "No description."}</p>
+              <p className="mt-2 text-xs text-slate-400">Estimated {room.estimatedMinutes ?? fixedSessionMinutes} min</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedRoomId(room.roomId);
+                    void createHostedSessionWithRoom(room.roomId);
+                  }}
+                  className="rounded bg-sky-600 px-3 py-2 text-sm font-medium text-white"
+                >
+                  Create Lobby
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedRoomId(room.roomId);
+                    void quickStartWithRoom(room.roomId);
+                  }}
+                  className="rounded bg-emerald-600 px-3 py-2 text-sm font-medium text-white"
+                >
+                  Quick Start
+                </button>
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -589,7 +687,8 @@ const PlayerPage: React.FC = () => {
     <main className="mx-auto flex max-w-7xl flex-col gap-4 p-4 text-slate-100">
       <ReconnectBanner syncState={syncState} replayedDiffCount={replayedDiffCount} showSynced={showSyncedBanner} />
 
-      {phase === "home" && renderEntryControls()}
+      {phase === "home" && renderHero()}
+      {phase === "map" && renderMapMenu()}
 
       {playerSession && phase !== "home" && (
         <section className="rounded border border-slate-700 bg-slate-900 p-4">
@@ -597,14 +696,14 @@ const PlayerPage: React.FC = () => {
             <div>
               <h1 className="text-2xl font-semibold">{sessionState?.roomName ?? playerSession.roomName}</h1>
               <p className="text-sm text-slate-300">
-                Session {playerSession.sessionId} | {connected ? "connected" : "disconnected"} | {status}
+                Session {playerSession.sessionId} | {connected ? "connected" : "disconnected"} | {status} | role {playerSession.joinMode}
               </p>
             </div>
             <div className="flex items-center gap-3">
-              <div className={`rounded px-3 py-2 text-xl font-semibold ${remainingSeconds <= 300 ? "bg-red-950 text-red-200" : "bg-slate-800"}`}>
+              <div className={`rounded px-3 py-2 text-xl font-semibold ${remainingSeconds <= 120 ? "bg-red-950 text-red-200" : "bg-slate-800"}`}>
                 {formatSeconds(remainingSeconds)}
               </div>
-              {phase === "lobby" && (
+              {phase === "lobby" && playerSession.canSubmitActions && (
                 <button onClick={startHostedSession} className="rounded bg-emerald-600 px-4 py-2 text-white">
                   Start Session
                 </button>
@@ -617,6 +716,12 @@ const PlayerPage: React.FC = () => {
             </div>
           )}
         </section>
+      )}
+
+      {!canSubmitActions && playerSession?.status === "Active" && (
+        <p className="rounded border border-amber-600 bg-amber-950 p-3 text-amber-200">
+          Spectator mode is active for this session. You will receive live updates but cannot submit actions.
+        </p>
       )}
 
       {connectionError && <p className="rounded border border-red-700 bg-red-950 p-2 text-red-200">{connectionError}</p>}
@@ -643,14 +748,14 @@ const PlayerPage: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2 rounded border border-slate-700 bg-slate-900 p-3">
               <span className="text-sm text-slate-300">Focused: {focusedHotspot?.name ?? "None"}</span>
               <button
-                disabled={!focusedHotspot || isGameOver}
+                disabled={!focusedHotspot || isGameOver || !canSubmitActions}
                 onClick={() => focusedHotspot && void submitAction("inspect", focusedHotspot.id)}
                 className="rounded bg-slate-700 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 Inspect
               </button>
               <button
-                disabled={!focusedHotspot || isGameOver}
+                disabled={!focusedHotspot || isGameOver || !canSubmitActions}
                 onClick={() => focusedHotspot && void submitAction("pickup", focusedHotspot.id)}
                 className="rounded bg-amber-700 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
               >
@@ -690,7 +795,7 @@ const PlayerPage: React.FC = () => {
                 setInventoryInteractionMode(mode);
               }}
               onClearSelection={clearInventoryIntent}
-              disabled={!connected || isGameOver}
+              disabled={!connected || isGameOver || !canSubmitActions}
             />
 
             <aside className="rounded border border-slate-700 bg-slate-900 p-4">
@@ -720,6 +825,8 @@ const PlayerPage: React.FC = () => {
               <summary>Debug</summary>
               <p>Sync: {syncState}</p>
               <p>Version: {sessionVersion}</p>
+              <p>Role: {playerSession?.joinMode ?? "player"}</p>
+              <p>Can submit actions: {canSubmitActions ? "yes" : "no"}</p>
             </details>
           </div>
         </section>

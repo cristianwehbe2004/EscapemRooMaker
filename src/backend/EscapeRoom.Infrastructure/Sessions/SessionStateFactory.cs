@@ -26,7 +26,20 @@ public static class SessionStateFactory
     public static string WithSessionState(string stateSnapshot, Room room, GameSession session, DateTime serverTimeUtc)
     {
         var state = JsonNode.Parse(string.IsNullOrWhiteSpace(stateSnapshot) ? "{}" : stateSnapshot) as JsonObject ?? new JsonObject();
-        state["session"] = JsonSerializer.SerializeToNode(BuildSessionState(room, session, serverTimeUtc), JsonOptions);
+        var nextSession = JsonSerializer.SerializeToNode(BuildSessionState(room, session, serverTimeUtc), JsonOptions) as JsonObject
+            ?? new JsonObject();
+        if (state["session"] is JsonObject currentSession)
+        {
+            foreach (var property in currentSession)
+            {
+                if (!nextSession.ContainsKey(property.Key))
+                {
+                    nextSession[property.Key] = property.Value?.DeepClone();
+                }
+            }
+        }
+
+        state["session"] = nextSession;
         return state.ToJsonString(JsonOptions);
     }
 

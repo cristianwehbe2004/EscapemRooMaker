@@ -90,5 +90,7 @@ export type GameStateData = {
     serverTimeUtc?: string;
     remainingSeconds?: number;
     isQuickPlay?: boolean;
+    joinMode?: string;
+    canSubmitActions?: boolean;
   };
 };

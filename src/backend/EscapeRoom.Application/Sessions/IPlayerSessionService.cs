@@ -29,4 +29,9 @@ public interface IPlayerSessionService
         Guid sessionId,
         PlayerIdentity identity,
         CancellationToken cancellationToken = default);
+
+    Task<bool> CanSubmitActionsAsync(
+        Guid sessionId,
+        string actorId,
+        CancellationToken cancellationToken = default);
 }

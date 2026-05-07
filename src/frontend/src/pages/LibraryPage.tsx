@@ -145,9 +145,16 @@ const LibraryPage: React.FC = () => {
           <article key={room.roomId} className="rounded border border-slate-700 bg-slate-900 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold">{room.name}</h2>
-              <p className="text-xs text-slate-400">{new Date(room.createdAtUtc).toLocaleString()}</p>
+              <div className="flex items-center gap-2">
+                {room.isFeatured && <span className="rounded bg-sky-800 px-2 py-1 text-[10px] uppercase tracking-wider text-sky-200">featured</span>}
+                {room.difficulty && (
+                  <span className="rounded bg-slate-700 px-2 py-1 text-[10px] uppercase tracking-wider text-slate-200">{room.difficulty}</span>
+                )}
+                <p className="text-xs text-slate-400">{new Date(room.createdAtUtc).toLocaleString()}</p>
+              </div>
             </div>
             <p className="mt-2 text-sm text-slate-300">{room.description || "No description."}</p>
+            {room.estimatedMinutes ? <p className="mt-1 text-xs text-slate-400">Estimated: {room.estimatedMinutes} minutes</p> : null}
             <p className="mt-2 text-sm text-slate-200">
               Rating: {room.averageRating.toFixed(2)} ({room.ratingCount} vote{room.ratingCount === 1 ? "" : "s"})
               {room.viewerRating ? ` • Your rating: ${room.viewerRating}` : ""}
