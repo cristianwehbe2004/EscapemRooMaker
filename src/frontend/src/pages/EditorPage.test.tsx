@@ -92,13 +92,13 @@ describe("EditorPage", () => {
 
     await waitFor(() => {
       expect(global.fetch).toHaveBeenCalledWith(
-        "http://localhost:5000/api/creator/rooms/room-123",
+        "http://localhost:5130/api/creator/rooms/room-123",
         expect.objectContaining({ method: "PUT" })
       );
     });
 
     const [, request] = (global.fetch as jest.Mock).mock.calls.find(
-      ([url]: [string]) => url === "http://localhost:5000/api/creator/rooms/room-123"
+      ([url]: [string]) => url === "http://localhost:5130/api/creator/rooms/room-123"
     );
     const body = JSON.parse(request.body as string);
 

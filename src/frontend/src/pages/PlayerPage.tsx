@@ -12,7 +12,7 @@ import { LibraryRoomListItemDto, LibraryRoomsResponse } from "../types/library";
 import { CreateSessionRequest, JoinSessionRequest, PlayerSessionSummary } from "../types/playerSession";
 import { InventoryCombineActionPayload, InventoryUseActionPayload, PlayerActionEnvelope } from "../types/realtime";
 
-const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5000";
+const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
 const guestActorStorageKey = "escape-room.guestActorId";
 const fixedSessionMinutes = 10;
 

@@ -5,7 +5,7 @@ import { runSessionRecovery } from "../realtime/recoveryController";
 import { useGameStore } from "../store/gameStore";
 import { GmSessionSummary, PlayerPresenceEvent, SessionTimelineEntry } from "../types/realtime";
 
-const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5000";
+const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
 
 const createClientActionId = (): string => {
 	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {

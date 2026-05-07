@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { LibraryRoomListItemDto, LibraryRoomsResponse, UpsertRoomRatingResponse } from "../types/library";
 
-const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5000";
+const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
 const pageSize = 20;
 
 const LibraryPage: React.FC = () => {

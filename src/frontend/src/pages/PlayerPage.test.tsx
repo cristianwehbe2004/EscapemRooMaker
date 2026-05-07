@@ -214,7 +214,7 @@ describe("PlayerPage", () => {
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://localhost:5000/api/player/sessions",
+        "http://localhost:5130/api/player/sessions",
         expect.objectContaining({ method: "POST", body: expect.stringContaining("room-easy") })
       );
       expect(mockStart).toHaveBeenCalledWith("session-123", undefined, expect.any(Object));
@@ -233,7 +233,7 @@ describe("PlayerPage", () => {
 
     await waitFor(() => {
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        "http://localhost:5000/api/player/sessions/session-123/join",
+        "http://localhost:5130/api/player/sessions/session-123/join",
         expect.objectContaining({ method: "POST" })
       );
     });

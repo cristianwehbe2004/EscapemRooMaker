@@ -1,10 +1,14 @@
 using System;
+using EscapeRoom.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
 namespace EscapeRoom.Infrastructure.Migrations
 {
+    [DbContext(typeof(AppDbContext))]
+    [Migration("20260504120000_AddSessionTimerMetadata")]
     /// <inheritdoc />
     public partial class AddSessionTimerMetadata : Migration
     {

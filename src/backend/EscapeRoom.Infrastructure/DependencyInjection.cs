@@ -30,7 +30,6 @@ public static class DependencyInjection
         var redisConnection = configuration.GetConnectionString("Redis") ?? "localhost:6379";
 
         services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connectionString));
-        services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnection));
         services.AddTriggerEngineCore();
 
         services.AddScoped<IJwtTokenService, JwtTokenService>();
@@ -40,12 +39,57 @@ public static class DependencyInjection
         services.AddScoped<ILibraryService, LibraryService>();
         services.AddScoped<IPlayerSessionService, PlayerSessionService>();
         services.AddScoped<ISessionActionProcessor, SessionActionProcessor>();
-        services.AddScoped<ISessionLockService, RedisSessionLockService>();
-        services.AddScoped<ISessionStateStore, RedisSessionStateStore>();
-        services.AddScoped<IIdempotencyStore, RedisIdempotencyStore>();
         services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
         services.AddScoped<DatabaseSeeder>();
 
+        if (TryConnectRedis(redisConnection, out var multiplexer))
+        {
+            services.AddSingleton<IConnectionMultiplexer>(_ => multiplexer);
+            services.AddScoped<ISessionLockService, RedisSessionLockService>();
+            services.AddScoped<ISessionStateStore, RedisSessionStateStore>();
+            services.AddScoped<IIdempotencyStore, RedisIdempotencyStore>();
+        }
+        else
+        {
+            services.AddSingleton<InMemorySessionStateStore>();
+            services.AddSingleton<InMemorySessionLockService>();
+            services.AddSingleton<InMemoryIdempotencyStore>();
+            services.AddScoped<ISessionLockService>(sp => sp.GetRequiredService<InMemorySessionLockService>());
+            services.AddScoped<ISessionStateStore>(sp => sp.GetRequiredService<InMemorySessionStateStore>());
+            services.AddScoped<IIdempotencyStore>(sp => sp.GetRequiredService<InMemoryIdempotencyStore>());
+        }
+
         return services;
+    }
+
+    private static bool TryConnectRedis(string redisConnection, out IConnectionMultiplexer multiplexer)
+    {
+        try
+        {
+            var options = ConfigurationOptions.Parse(redisConnection, true);
+            options.AbortOnConnectFail = true;
+            options.ConnectRetry = 1;
+            options.ConnectTimeout = Math.Min(options.ConnectTimeout <= 0 ? 1000 : options.ConnectTimeout, 1000);
+            options.SyncTimeout = Math.Min(options.SyncTimeout <= 0 ? 3000 : options.SyncTimeout, 3000);
+
+            var connectedMultiplexer = ConnectionMultiplexer.Connect(options);
+            var hasConnectedServer = connectedMultiplexer.GetEndPoints()
+                .Select(endpoint => connectedMultiplexer.GetServer(endpoint))
+                .Any(server => server.IsConnected);
+            if (!hasConnectedServer)
+            {
+                connectedMultiplexer.Dispose();
+                multiplexer = null!;
+                return false;
+            }
+
+            multiplexer = connectedMultiplexer;
+            return true;
+        }
+        catch
+        {
+            multiplexer = null!;
+            return false;
+        }
     }
 }

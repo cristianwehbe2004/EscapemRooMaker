@@ -4,7 +4,7 @@ import RoomCanvas from "../components/konva/RoomCanvas";
 import { EditorDocumentDto, TriggerGraphNode, ValidationIssueDto } from "../types/editor";
 import { initialGameData } from "../store/gameStore";
 
-const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5000";
+const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
 
 const defaultDocument: EditorDocumentDto = {
   room: initialGameData.room,
