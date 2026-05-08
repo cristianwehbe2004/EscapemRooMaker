@@ -240,4 +240,187 @@ describe("PlayerPage", () => {
 
     expect(screen.getByText(/Spectator mode is active/i)).toBeInTheDocument();
   });
+
+  it("keeps the player in a recoverable state when realtime join fails", async () => {
+    mockStart.mockRejectedValueOnce(new Error("Failed to invoke 'JoinSession' due to an error on the server."));
+
+    render(<PlayerPage />);
+
+    fireEvent.click(screen.getByText("Create Session"));
+
+    expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Quick Start")[0]);
+
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalledWith("session-123", undefined, expect.any(Object));
+    });
+
+    expect(await screen.findByText(/Failed to invoke 'JoinSession'/i)).toBeInTheDocument();
+    expect(screen.getByText("Retry Connect")).toBeInTheDocument();
+    expect(screen.queryByText("Inspect Desk Note")).not.toBeInTheDocument();
+  });
+
+  it("shows contextual fallback actions and maps drawer Open to inspect", async () => {
+    useGameStore.setState((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        room: {
+          ...current.state.room,
+          hotspots: [
+            {
+              id: "door-note",
+              name: "Door Note",
+              visualKind: "note",
+              x: 10,
+              y: 10,
+              width: 50,
+              height: 50,
+              color: "#fff7c2",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+            },
+            {
+              id: "left-drawer",
+              name: "Workbench Drawer",
+              visualKind: "drawer",
+              x: 70,
+              y: 20,
+              width: 60,
+              height: 40,
+              color: "#7a5035",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+            },
+            {
+              id: "final-lock",
+              name: "Final Lock",
+              visualKind: "lock",
+              x: 140,
+              y: 40,
+              width: 40,
+              height: 60,
+              color: "#f4b860",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+              targetableModes: ["use"],
+              targetableItemIds: ["brass-key"],
+            },
+          ],
+          objectStates: [
+            { id: "door-note", visible: true, available: true, locked: false, interactive: true },
+            { id: "left-drawer", visible: true, available: true, locked: false, interactive: true },
+            { id: "final-lock", visible: true, available: true, locked: false, interactive: true },
+          ],
+        },
+        inventory: [
+          {
+            id: "brass-key",
+            label: "Brass Key",
+            quantity: 1,
+            type: "key",
+            stack: false,
+            status: "ready",
+            usableTargetIds: ["final-lock"],
+          },
+        ],
+      },
+    }));
+
+    render(<PlayerPage />);
+    fireEvent.click(screen.getByText("Create Session"));
+    expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Quick Start")[0]);
+
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalled();
+    });
+
+    expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pickup" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open" }));
+    await waitFor(() => {
+      expect(mockSubmitAction).toHaveBeenCalledWith(
+        "session-123",
+        expect.objectContaining({ actionType: "inspect", target: "left-drawer" })
+      );
+    });
+  });
+
+  it("enables Use action for lock targets only when use mode and a valid item are selected", async () => {
+    useGameStore.setState((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        room: {
+          ...current.state.room,
+          hotspots: [
+            {
+              id: "final-lock",
+              name: "Final Lock",
+              visualKind: "lock",
+              x: 140,
+              y: 40,
+              width: 40,
+              height: 60,
+              color: "#f4b860",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+              targetableModes: ["use"],
+              targetableItemIds: ["brass-key"],
+            },
+          ],
+          objectStates: [{ id: "final-lock", visible: true, available: true, locked: false, interactive: true }],
+        },
+        inventory: [
+          {
+            id: "brass-key",
+            label: "Brass Key",
+            quantity: 1,
+            type: "key",
+            stack: false,
+            status: "ready",
+            usableTargetIds: ["final-lock"],
+          },
+        ],
+      },
+    }));
+
+    render(<PlayerPage />);
+    fireEvent.click(screen.getByText("Create Session"));
+    expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Quick Start")[0]);
+
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalled();
+    });
+
+    const useButtonBeforeMode = screen.getAllByRole("button", { name: "Use" }).find((button) => button.hasAttribute("disabled"));
+    expect(useButtonBeforeMode).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Brass Key/i }));
+    const useButtonsAfterSelect = screen.getAllByRole("button", { name: "Use" });
+    const inventoryUseButton = useButtonsAfterSelect.find((button) => !button.hasAttribute("disabled"));
+    expect(inventoryUseButton).toBeDefined();
+    fireEvent.click(inventoryUseButton!);
+
+    const enabledUseButtons = screen.getAllByRole("button", { name: "Use" }).filter((button) => !button.hasAttribute("disabled"));
+    fireEvent.click(enabledUseButtons[0]);
+
+    await waitFor(() => {
+      expect(mockSubmitAction).toHaveBeenCalledWith(
+        "session-123",
+        expect.objectContaining({ actionType: "inventory.use", target: "final-lock" })
+      );
+    });
+  });
 });

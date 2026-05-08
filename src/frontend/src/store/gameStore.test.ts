@@ -223,4 +223,61 @@ describe("gameStore", () => {
       combinableWithIds: ["inv-tape"],
     });
   });
+
+  it("keeps seeded door note and drawer visible when snapshot includes matching object states", () => {
+    const snapshot: SessionSnapshotEnvelope = {
+      sessionId: "session-clocktower",
+      sessionVersion: 2,
+      stateJson: JSON.stringify({
+        room: {
+          roomName: "Clocktower Foyer",
+          width: 960,
+          height: 620,
+          backgroundColor: "#0b1220",
+          hotspots: [
+            {
+              id: "door-note",
+              name: "Door Note",
+              visualKind: "note",
+              x: 728,
+              y: 186,
+              width: 96,
+              height: 72,
+              color: "#fff7c2",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+            },
+            {
+              id: "left-drawer",
+              name: "Workbench Drawer",
+              visualKind: "drawer",
+              x: 262,
+              y: 410,
+              width: 112,
+              height: 58,
+              color: "#7a5035",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+            },
+          ],
+          objectStates: [
+            { id: "door-note", visible: true, available: true, locked: false, interactive: true },
+            { id: "left-drawer", visible: true, available: true, locked: false, interactive: true },
+          ],
+        },
+      }),
+      serverTimeUtc: new Date().toISOString(),
+    };
+
+    useGameStore.getState().applySnapshot(snapshot);
+    const note = useGameStore.getState().state.room.hotspots.find((entry) => entry.id === "door-note");
+    const drawer = useGameStore.getState().state.room.hotspots.find((entry) => entry.id === "left-drawer");
+
+    expect(note).toMatchObject({ visible: true, available: true, interactive: true });
+    expect(drawer).toMatchObject({ visible: true, available: true, interactive: true });
+  });
 });

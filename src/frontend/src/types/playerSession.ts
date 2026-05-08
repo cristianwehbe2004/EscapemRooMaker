@@ -2,6 +2,7 @@ export type CreateSessionRequest = {
   roomId?: string;
   durationMinutes?: number;
   displayName?: string;
+  guestActorId?: string;
 };
 
 export type JoinSessionRequest = {

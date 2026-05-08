@@ -9,6 +9,7 @@ using EscapeRoom.Realtime.Presence;
 using EscapeRoom.Realtime.RateLimiting;
 using FluentAssertions;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace EscapeRoom.Tests.Unit.Realtime.Hubs;
@@ -52,6 +53,7 @@ public class GameHubTests
         var sessionId = Guid.NewGuid();
         var processor = new Mock<ISessionActionProcessor>();
         var store = new Mock<ISessionStateStore>();
+        var hydrator = new Mock<ISessionSnapshotHydrator>();
         var presenceTracker = new Mock<IPlayerPresenceTracker>();
         var gmPanelQueryService = new Mock<IGmPanelQueryService>();
 
@@ -72,7 +74,7 @@ public class GameHubTests
                 new StateDiffEnvelope { SessionVersion = 4, DiffSequence = 4 },
                 new StateDiffEnvelope { SessionVersion = 3, DiffSequence = 3 }
             ]);
-        store.Setup(x => x.GetSnapshotAsync(sessionId, It.IsAny<CancellationToken>()))
+        hydrator.Setup(x => x.GetOrHydrateAsync(sessionId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionSnapshotEnvelope { SessionId = sessionId, SessionVersion = 4 });
 
         var callerProxy = new Mock<ISingleClientProxy>();
@@ -97,10 +99,12 @@ public class GameHubTests
         var hub = new GameHub(
             processor.Object,
             store.Object,
+            hydrator.Object,
             BuildAllowingPlayerSessionService().Object,
             presenceTracker.Object,
             gmPanelQueryService.Object,
-            BuildAllowingRateLimiter().Object)
+            BuildAllowingRateLimiter().Object,
+            new Mock<ILogger<GameHub>>().Object)
         {
             Clients = clients.Object,
             Groups = groups.Object,
@@ -173,12 +177,13 @@ public class GameHubTests
         var sessionId = Guid.NewGuid();
         var processor = new Mock<ISessionActionProcessor>();
         var store = new Mock<ISessionStateStore>();
+        var hydrator = new Mock<ISessionSnapshotHydrator>();
         var presenceTracker = new Mock<IPlayerPresenceTracker>();
 
         store.Setup(x => x.GetDiffsAfterVersionAsync(sessionId, 5, It.IsAny<CancellationToken>()))
             .ReturnsAsync([]);
         presenceTracker.Setup(x => x.GetSessionPresence(sessionId)).Returns([]);
-        store.Setup(x => x.GetSnapshotAsync(sessionId, It.IsAny<CancellationToken>()))
+        hydrator.Setup(x => x.GetOrHydrateAsync(sessionId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(new SessionSnapshotEnvelope
             {
                 SessionId = sessionId,
@@ -199,10 +204,12 @@ public class GameHubTests
         var hub = new GameHub(
             processor.Object,
             store.Object,
+            hydrator.Object,
             BuildAllowingPlayerSessionService().Object,
             presenceTracker.Object,
             new Mock<IGmPanelQueryService>().Object,
-            BuildAllowingRateLimiter().Object)
+            BuildAllowingRateLimiter().Object,
+            new Mock<ILogger<GameHub>>().Object)
         {
             Clients = clients.Object,
             Groups = Mock.Of<IGroupManager>(),
@@ -224,6 +231,7 @@ public class GameHubTests
         ClaimsPrincipal principal)
     {
         var store = new Mock<ISessionStateStore>();
+        var hydrator = new Mock<ISessionSnapshotHydrator>();
         var presenceTracker = new Mock<IPlayerPresenceTracker>();
         var gmPanelQueryService = new Mock<IGmPanelQueryService>();
 
@@ -244,10 +252,12 @@ public class GameHubTests
         return new GameHub(
             processor.Object,
             store.Object,
+            hydrator.Object,
             playerSessionService.Object,
             presenceTracker.Object,
             gmPanelQueryService.Object,
-            rateLimiter.Object)
+            rateLimiter.Object,
+            new Mock<ILogger<GameHub>>().Object)
         {
             Clients = clients.Object,
             Groups = new Mock<IGroupManager>().Object,
@@ -271,5 +281,102 @@ public class GameHubTests
             .Setup(x => x.CanSubmitActionsAsync(It.IsAny<Guid>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
         return service;
+    }
+
+    [Fact]
+    public async Task JoinSession_ShouldHydrateSnapshot_WhenTransientStoreIsEmpty()
+    {
+        var sessionId = Guid.NewGuid();
+        var store = new Mock<ISessionStateStore>();
+        var hydrator = new Mock<ISessionSnapshotHydrator>();
+        var presenceTracker = new Mock<IPlayerPresenceTracker>();
+
+        presenceTracker.Setup(x => x.TrackConnected(sessionId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>()))
+            .Returns(new PlayerPresenceEvent
+            {
+                SessionId = sessionId,
+                PlayerId = "player-1",
+                DisplayName = "player-1",
+                Status = "connected",
+                IsConnected = true,
+                ConnectedAtUtc = DateTime.UtcNow,
+                LastSeenUtc = DateTime.UtcNow
+            });
+        store.Setup(x => x.GetDiffsAfterVersionAsync(sessionId, 0, It.IsAny<CancellationToken>()))
+            .ReturnsAsync([]);
+        hydrator.Setup(x => x.GetOrHydrateAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SessionSnapshotEnvelope
+            {
+                SessionId = sessionId,
+                SessionVersion = 2,
+                StateJson = "{}"
+            });
+
+        var callerProxy = new Mock<ISingleClientProxy>();
+        callerProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var groupProxy = new Mock<IClientProxy>();
+        groupProxy.Setup(x => x.SendCoreAsync(It.IsAny<string>(), It.IsAny<object?[]>(), It.IsAny<CancellationToken>()))
+            .Returns(Task.CompletedTask);
+        var clients = new Mock<IHubCallerClients>();
+        clients.SetupGet(x => x.Caller).Returns(callerProxy.Object);
+        clients.Setup(x => x.Group(It.IsAny<string>())).Returns(groupProxy.Object);
+
+        var context = new Mock<HubCallerContext>();
+        context.SetupGet(x => x.ConnectionId).Returns("conn-1");
+        context.SetupGet(x => x.User).Returns(new ClaimsPrincipal(new ClaimsIdentity()));
+
+        var hub = new GameHub(
+            new Mock<ISessionActionProcessor>().Object,
+            store.Object,
+            hydrator.Object,
+            BuildAllowingPlayerSessionService().Object,
+            presenceTracker.Object,
+            new Mock<IGmPanelQueryService>().Object,
+            BuildAllowingRateLimiter().Object,
+            new Mock<ILogger<GameHub>>().Object)
+        {
+            Clients = clients.Object,
+            Groups = Mock.Of<IGroupManager>(),
+            Context = context.Object
+        };
+
+        var ack = await hub.JoinSession(sessionId, 0);
+
+        ack.CurrentVersion.Should().Be(2);
+        callerProxy.Verify(x => x.SendCoreAsync("SessionSnapshot", It.IsAny<object?[]>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task RequestSnapshot_ShouldHydrateSnapshot_WhenTransientStoreIsEmpty()
+    {
+        var sessionId = Guid.NewGuid();
+        var hydrator = new Mock<ISessionSnapshotHydrator>();
+        hydrator.Setup(x => x.GetOrHydrateAsync(sessionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new SessionSnapshotEnvelope
+            {
+                SessionId = sessionId,
+                SessionVersion = 3,
+                StateJson = "{}"
+            });
+
+        var hub = new GameHub(
+            new Mock<ISessionActionProcessor>().Object,
+            new Mock<ISessionStateStore>().Object,
+            hydrator.Object,
+            BuildAllowingPlayerSessionService().Object,
+            Mock.Of<IPlayerPresenceTracker>(),
+            Mock.Of<IGmPanelQueryService>(),
+            BuildAllowingRateLimiter().Object,
+            new Mock<ILogger<GameHub>>().Object)
+        {
+            Clients = Mock.Of<IHubCallerClients>(),
+            Groups = Mock.Of<IGroupManager>(),
+            Context = Mock.Of<HubCallerContext>()
+        };
+
+        var snapshot = await hub.RequestSnapshot(sessionId);
+
+        snapshot.SessionVersion.Should().Be(3);
     }
 }

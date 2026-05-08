@@ -5,6 +5,7 @@ public class CreateSessionRequest
     public Guid? RoomId { get; set; }
     public int? DurationMinutes { get; set; }
     public string? DisplayName { get; set; }
+    public string? GuestActorId { get; set; }
 }
 
 public class JoinSessionRequest

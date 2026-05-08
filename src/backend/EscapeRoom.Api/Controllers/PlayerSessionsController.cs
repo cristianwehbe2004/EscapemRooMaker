@@ -19,7 +19,10 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
     {
         try
         {
-            var response = await playerSessionService.CreateSessionAsync(request, ResolveIdentity(request.DisplayName, null), cancellationToken);
+            var response = await playerSessionService.CreateSessionAsync(
+                request,
+                ResolveIdentity(request.DisplayName, request.GuestActorId),
+                cancellationToken);
             return Ok(response);
         }
         catch (Exception ex) when (TryMapSessionError(ex, out var mapped))
@@ -35,7 +38,10 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
     {
         try
         {
-            var response = await playerSessionService.QuickStartAsync(request, ResolveIdentity(request.DisplayName, null), cancellationToken);
+            var response = await playerSessionService.QuickStartAsync(
+                request,
+                ResolveIdentity(request.DisplayName, request.GuestActorId),
+                cancellationToken);
             return Ok(response);
         }
         catch (Exception ex) when (TryMapSessionError(ex, out var mapped))

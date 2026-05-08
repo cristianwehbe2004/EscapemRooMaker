@@ -63,13 +63,21 @@ export class GameRealtimeClient {
     this.activeSessionId = sessionId;
     await this.ensureStarted();
 
-    return this.connection.invoke<JoinSessionAck>(
-      "JoinSession",
-      sessionId,
-      lastKnownVersion ?? null,
-      identity?.displayName ?? null,
-      identity?.guestActorId ?? null
-    );
+    try {
+      return await this.connection.invoke<JoinSessionAck>(
+        "JoinSession",
+        sessionId,
+        lastKnownVersion ?? null,
+        identity?.displayName ?? null,
+        identity?.guestActorId ?? null
+      );
+    } catch (error) {
+      const details =
+        error instanceof Error
+          ? `${error.name}: ${error.message}${error.stack ? `\n${error.stack}` : ""}`
+          : `Non-Error rejection: ${JSON.stringify(error)}`;
+      throw new Error(`JoinSession invoke failed for session '${sessionId}'. ${details}`);
+    }
   }
 
   async stop(): Promise<void> {

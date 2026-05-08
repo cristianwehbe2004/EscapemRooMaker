@@ -38,52 +38,8 @@ export const initialGameData: GameStateData = {
     backgroundColor: "#0b1220",
     assets: [],
     layers: [],
-    hotspots: [
-      {
-        id: "desk-note",
-        name: "Desk Note",
-        x: 120,
-        y: 130,
-        width: 110,
-        height: 50,
-        color: "#facc15",
-        available: true,
-        visible: true,
-        locked: false,
-        interactive: true,
-      },
-      {
-        id: "rusty-key",
-        name: "Rusty Key",
-        x: 420,
-        y: 280,
-        width: 90,
-        height: 40,
-        color: "#94a3b8",
-        available: true,
-        visible: true,
-        locked: false,
-        interactive: true,
-      },
-      {
-        id: "locked-chest",
-        name: "Locked Chest",
-        x: 650,
-        y: 360,
-        width: 140,
-        height: 90,
-        color: "#b45309",
-        available: true,
-        visible: true,
-        locked: true,
-        interactive: true,
-      },
-    ],
-    objectStates: [
-      { id: "desk-note", visible: true, available: true, locked: false, interactive: true },
-      { id: "rusty-key", visible: true, available: true, locked: false, interactive: true },
-      { id: "locked-chest", visible: true, available: true, locked: true, interactive: true },
-    ],
+    hotspots: [],
+    objectStates: [],
   },
   inventory: [
     {
@@ -187,6 +143,8 @@ const toHotspot = (value: Record<string, unknown>, defaults?: RoomHotspot): Room
   return {
     id,
     name: asString(value.name) ?? defaults?.name ?? id,
+    visualKind: asString(value.visualKind) ?? defaults?.visualKind,
+    variant: asString(value.variant) ?? defaults?.variant,
     x: typeof value.x === "number" ? value.x : defaults?.x ?? 0,
     y: typeof value.y === "number" ? value.y : defaults?.y ?? 0,
     width: typeof value.width === "number" ? value.width : defaults?.width ?? 80,
@@ -218,6 +176,7 @@ const toLayer = (value: Record<string, unknown>, defaults?: RoomLayer): RoomLaye
   return {
     id,
     name: asString(value.name) ?? defaults?.name ?? id,
+    visualKind: asString(value.visualKind) ?? defaults?.visualKind,
     zIndex: typeof value.zIndex === "number" ? value.zIndex : defaults?.zIndex ?? 0,
     visible: typeof value.visible === "boolean" ? value.visible : defaults?.visible ?? true,
     opacity:
@@ -244,6 +203,8 @@ const toAsset = (value: Record<string, unknown>, defaults?: RoomAsset): RoomAsse
   return {
     id,
     kind,
+    visualKind: asString(value.visualKind) ?? defaults?.visualKind,
+    variant: asString(value.variant) ?? defaults?.variant,
     x: typeof value.x === "number" ? value.x : defaults?.x ?? 0,
     y: typeof value.y === "number" ? value.y : defaults?.y ?? 0,
     width: typeof value.width === "number" ? value.width : defaults?.width ?? 0,
@@ -336,6 +297,7 @@ const normalizeRoomState = (value: unknown, fallback: RoomState = initialGameDat
 
   return {
     roomName: asString(getRecordValue(room, "roomName")) ?? fallback.roomName,
+    themeId: asOptionalString(getRecordValue(room, "themeId")) ?? fallback.themeId,
     width: typeof getRecordValue(room, "width") === "number" ? (getRecordValue(room, "width") as number) : fallback.width,
     height: typeof getRecordValue(room, "height") === "number" ? (getRecordValue(room, "height") as number) : fallback.height,
     backgroundColor: asString(getRecordValue(room, "backgroundColor")) ?? fallback.backgroundColor,
@@ -415,6 +377,7 @@ const applyRoomPatch = (
   const next: RoomState = {
     ...current,
     roomName: roomPatch.roomName ?? current.roomName,
+    themeId: asString((roomPatch as Record<string, unknown>).themeId) ?? current.themeId,
     width: roomPatch.width ?? current.width,
     height: roomPatch.height ?? current.height,
     backgroundColor: asString(roomPatch.backgroundColor) ?? current.backgroundColor,

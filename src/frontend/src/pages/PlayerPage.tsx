@@ -11,12 +11,21 @@ import { ActionError, parseActionError } from "../types/actionError";
 import { LibraryRoomListItemDto, LibraryRoomsResponse } from "../types/library";
 import { CreateSessionRequest, JoinSessionRequest, PlayerSessionSummary } from "../types/playerSession";
 import { InventoryCombineActionPayload, InventoryUseActionPayload, PlayerActionEnvelope } from "../types/realtime";
+import { InventoryItem, RoomHotspot } from "../types/gameState";
 
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
 const guestActorStorageKey = "escape-room.guestActorId";
 const fixedSessionMinutes = 10;
 
 type PlayerPhase = "home" | "map" | "lobby" | "game";
+type HotspotQuickActionType = "inspect" | "pickup" | "use";
+
+type HotspotQuickAction = {
+  key: string;
+  label: string;
+  actionType: HotspotQuickActionType;
+  disabled: boolean;
+};
 
 const ensureGuestActorId = (): string => {
   if (typeof window === "undefined") {
@@ -38,6 +47,41 @@ const formatSeconds = (seconds: number): string => {
   const minutes = Math.floor(safeSeconds / 60);
   const remainingSeconds = safeSeconds % 60;
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
+};
+
+const classifyHotspotKind = (hotspot: RoomHotspot): "note" | "drawer" | "key" | "door" | "lock" | "generic" => {
+  const explicit = hotspot.visualKind?.toLowerCase();
+  if (explicit === "note" || explicit === "drawer" || explicit === "key" || explicit === "door" || explicit === "lock") {
+    return explicit;
+  }
+
+  const value = `${hotspot.id} ${hotspot.name}`.toLowerCase();
+  if (value.includes("note")) return "note";
+  if (value.includes("drawer")) return "drawer";
+  if (value.includes("key")) return "key";
+  if (value.includes("door") || value.includes("gate")) return "door";
+  if (value.includes("lock")) return "lock";
+  return "generic";
+};
+
+const canUseHotspotWithItem = (hotspot: RoomHotspot, selectedItem: InventoryItem | null): boolean => {
+  if (!selectedItem || selectedItem.status !== "ready") {
+    return false;
+  }
+
+  if (hotspot.targetableModes && hotspot.targetableModes.length > 0 && !hotspot.targetableModes.includes("use")) {
+    return false;
+  }
+
+  if (hotspot.targetableItemIds && hotspot.targetableItemIds.length > 0) {
+    return hotspot.targetableItemIds.includes(selectedItem.id);
+  }
+
+  if (selectedItem.usableTargetIds && selectedItem.usableTargetIds.length > 0) {
+    return selectedItem.usableTargetIds.includes(hotspot.id);
+  }
+
+  return true;
 };
 
 const PlayerPage: React.FC = () => {
@@ -64,6 +108,7 @@ const PlayerPage: React.FC = () => {
   const [featuredRooms, setFeaturedRooms] = useState<LibraryRoomListItemDto[]>([]);
   const [featuredLoading, setFeaturedLoading] = useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
+  const [joiningSession, setJoiningSession] = useState(false);
   const { runWithCooldown, getRemainingMs } = useActionCooldown(900);
   const lastSnapshotSyncAtRef = useRef(0);
   const clientRef = useRef<GameRealtimeClient | null>(null);
@@ -81,6 +126,7 @@ const PlayerPage: React.FC = () => {
     setConnectionStatus,
     setSyncState,
     setSessionId,
+    reset,
   } = useGameStore();
 
   const clearInventoryIntent = useCallback(() => {
@@ -204,6 +250,11 @@ const PlayerPage: React.FC = () => {
   };
 
   const connectRealtime = async (summary: PlayerSessionSummary) => {
+    if (connected && sessionId && sessionId !== summary.sessionId) {
+      await client.stop();
+      setConnectionStatus({ connected: false });
+    }
+
     const ack = await client.start(summary.sessionId, undefined, {
       displayName: summary.displayName || displayName,
       guestActorId: summary.actorId || guestActorId,
@@ -214,9 +265,65 @@ const PlayerPage: React.FC = () => {
     setLastActionLabel(`Joined session ${ack.sessionId}`);
   };
 
+  const connectSessionAndEnter = async (summary: PlayerSessionSummary, phaseOnSuccess: PlayerPhase) => {
+    setJoiningSession(true);
+    setPlayerSession(summary);
+    setSessionInput(summary.sessionId);
+
+    try {
+      await connectRealtime(summary);
+      setPhase(phaseOnSuccess);
+      setConnectionError(null);
+    } catch (error) {
+      setPhase("lobby");
+      setConnectionStatus({ connected: false });
+      setSyncState("synced");
+      setConnectionError(error instanceof Error ? error.message : "Could not connect to the session.");
+    } finally {
+      setJoiningSession(false);
+    }
+  };
+
+  const leaveCurrentSession = async () => {
+    setConnectionError(null);
+    setActionError(null);
+    await client.stop();
+    setPlayerSession(null);
+    setSessionInput("");
+    setFocusedTargetId(null);
+    clearInventoryIntent();
+    reset();
+    setPhase("home");
+  };
+
+  const returnToMapMenu = async () => {
+    setConnectionError(null);
+    setActionError(null);
+    await client.stop();
+    setPlayerSession(null);
+    setSessionInput("");
+    setFocusedTargetId(null);
+    clearInventoryIntent();
+    reset();
+    setPhase("map");
+    if (featuredRooms.length === 0) {
+      await loadFeaturedRooms();
+    }
+  };
+
+  const retryRealtimeJoin = async () => {
+    if (!playerSession) {
+      return;
+    }
+
+    const nextPhase = playerSession.status === "Active" ? "game" : "lobby";
+    await connectSessionAndEnter(playerSession, nextPhase);
+  };
+
   const createSessionBody = (roomId: string): CreateSessionRequest => ({
     roomId,
     displayName,
+    guestActorId,
   });
 
   const joinRequestBody = (): JoinSessionRequest => ({
@@ -253,10 +360,7 @@ const PlayerPage: React.FC = () => {
     setActionError(null);
     try {
       const summary = await callSessionApi<PlayerSessionSummary>("/api/player/sessions/quick-start", "POST", createSessionBody(roomId));
-      setPlayerSession(summary);
-      setSessionInput(summary.sessionId);
-      setPhase("game");
-      await connectRealtime(summary);
+      await connectSessionAndEnter(summary, "game");
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : "Could not quick start a session.");
     }
@@ -267,10 +371,7 @@ const PlayerPage: React.FC = () => {
     setActionError(null);
     try {
       const summary = await callSessionApi<PlayerSessionSummary>("/api/player/sessions", "POST", createSessionBody(roomId));
-      setPlayerSession(summary);
-      setSessionInput(summary.sessionId);
-      setPhase("lobby");
-      await connectRealtime(summary);
+      await connectSessionAndEnter(summary, "lobby");
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : "Could not create a session.");
     }
@@ -290,10 +391,7 @@ const PlayerPage: React.FC = () => {
         "POST",
         joinRequestBody()
       );
-      setPlayerSession(summary);
-      setSessionInput(summary.sessionId);
-      setPhase(summary.status === "Active" ? "game" : "lobby");
-      await connectRealtime(summary);
+      await connectSessionAndEnter(summary, summary.status === "Active" ? "game" : "lobby");
     } catch (error) {
       setConnectionError(error instanceof Error ? error.message : "Could not join the session.");
     }
@@ -315,10 +413,10 @@ const PlayerPage: React.FC = () => {
         joinRequestBody()
       );
       setPlayerSession(summary);
-      setPhase("game");
       if (!connected) {
-        await connectRealtime(summary);
+        await connectSessionAndEnter(summary, "game");
       } else {
+        setPhase("game");
         const snapshot = await client.requestSnapshot(summary.sessionId);
         applySnapshot(snapshot);
       }
@@ -356,12 +454,12 @@ const PlayerPage: React.FC = () => {
     () => state.inventory.find((item) => item.id === selectedInventoryItemId) ?? null,
     [selectedInventoryItemId, state.inventory]
   );
+  const canSubmitActions = (playerSession?.canSubmitActions ?? state.session?.canSubmitActions ?? true) && playerSession?.joinMode !== "spectator";
 
   const focusedHotspot = useMemo(
     () => state.room.hotspots.find((hotspot) => hotspot.id === focusedTargetId) ?? null,
     [focusedTargetId, state.room.hotspots]
   );
-
   useEffect(() => {
     setTrackedCooldownKeys((current) => {
       const activeEntries = Object.entries(current).filter(([key]) => getRemainingMs(key) > 0);
@@ -405,8 +503,6 @@ const PlayerPage: React.FC = () => {
       clearInventoryIntent();
     }
   }, [clearInventoryIntent, selectedInventoryItemId, state.inventory]);
-
-  const canSubmitActions = (playerSession?.canSubmitActions ?? state.session?.canSubmitActions ?? true) && playerSession?.joinMode !== "spectator";
 
   const submitAction = async (
     actionType: string,
@@ -521,6 +617,7 @@ const PlayerPage: React.FC = () => {
 
   const handleInspect = async (targetId: string) => {
     setFocusedTargetId(targetId);
+    const actionTargetId = state.room.hotspots.find((hotspot) => hotspot.id === targetId)?.objectId ?? targetId;
     if (inventoryInteractionMode === "use" && selectedInventoryItemId) {
       const selectedItem = selectedInventoryItem;
       if (selectedItem?.status !== "ready") {
@@ -547,15 +644,51 @@ const PlayerPage: React.FC = () => {
         itemId: selectedInventoryItemId,
       };
 
-      await submitAction("inventory.use", targetId, payload, {
-        cooldownKey: `inventory.use:${selectedInventoryItemId}:${targetId}`,
+      await submitAction("inventory.use", actionTargetId, payload, {
+        cooldownKey: `inventory.use:${selectedInventoryItemId}:${actionTargetId}`,
         afterSuccess: clearInventoryIntent,
       });
       return;
     }
 
-    await submitAction("inspect", targetId);
+    await submitAction("inspect", actionTargetId);
   };
+
+  const handlePickup = async (targetId: string) => {
+    setFocusedTargetId(targetId);
+    const actionTargetId = state.room.hotspots.find((hotspot) => hotspot.id === targetId)?.objectId ?? targetId;
+    await submitAction("pickup", actionTargetId);
+  };
+
+  const executeQuickAction = useCallback(
+    async (hotspotId: string, actionType: HotspotQuickActionType) => {
+      if (actionType === "pickup") {
+        await handlePickup(hotspotId);
+        return;
+      }
+
+      if (actionType === "use") {
+        if (!selectedInventoryItemId) {
+          setActionError({
+            source: "local-cooldown",
+            message: "Select an inventory item and enable Use mode first.",
+          });
+          return;
+        }
+
+        if (inventoryInteractionMode !== "use") {
+          setActionError({
+            source: "local-cooldown",
+            message: "Enable Use mode from inventory to use this target.",
+          });
+          return;
+        }
+      }
+
+      await handleInspect(hotspotId);
+    },
+    [handleInspect, handlePickup, inventoryInteractionMode, selectedInventoryItemId]
+  );
 
   const sessionState = state.session;
   const status = sessionState?.status ?? playerSession?.status ?? "Not Started";
@@ -573,6 +706,44 @@ const PlayerPage: React.FC = () => {
     return Math.max(0, Math.ceil((new Date(endsAtUtc).getTime() - Date.now()) / 1000));
   }, [endsAtUtc, playerSession?.remainingSeconds, sessionState?.remainingSeconds, status, timerTick]);
   const isGameOver = status === "Completed" || status === "Expired" || status === "Cancelled";
+  const quickActionsByHotspotId = useMemo(() => {
+    const actionsById = new Map<string, HotspotQuickAction[]>();
+    for (const hotspot of state.room.hotspots) {
+      const canInteract = hotspot.available && hotspot.interactive && !hotspot.locked && canSubmitActions && !isGameOver;
+      const kind = classifyHotspotKind(hotspot);
+      const actions: HotspotQuickAction[] = [];
+
+      if (kind === "key") {
+        actions.push({ key: `${hotspot.id}-pickup`, label: "Pickup", actionType: "pickup", disabled: !canInteract });
+      } else if (kind === "drawer") {
+        actions.push({ key: `${hotspot.id}-open`, label: "Open", actionType: "inspect", disabled: !canInteract });
+      } else if (kind === "note") {
+        actions.push({ key: `${hotspot.id}-inspect`, label: "Inspect", actionType: "inspect", disabled: !canInteract });
+      } else if (kind === "door" || kind === "lock") {
+        const canUse = canInteract && inventoryInteractionMode === "use" && canUseHotspotWithItem(hotspot, selectedInventoryItem);
+        actions.push({ key: `${hotspot.id}-use`, label: "Use", actionType: "use", disabled: !canUse });
+        actions.push({ key: `${hotspot.id}-inspect`, label: "Inspect", actionType: "inspect", disabled: !canInteract });
+      } else {
+        actions.push({ key: `${hotspot.id}-inspect`, label: "Inspect", actionType: "inspect", disabled: !canInteract });
+      }
+
+      actionsById.set(hotspot.id, actions);
+    }
+
+    return actionsById;
+  }, [canSubmitActions, inventoryInteractionMode, isGameOver, selectedInventoryItem, state.room.hotspots]);
+
+  useEffect(() => {
+    if (status !== "Completed" && status !== "Expired" && status !== "Cancelled") {
+      return;
+    }
+
+    clearInventoryIntent();
+    setInventoryInteractionMode("none");
+    if (connected) {
+      void client.stop().then(() => setConnectionStatus({ connected: false }));
+    }
+  }, [clearInventoryIntent, client, connected, setConnectionStatus, status]);
 
   const renderHero = () => (
     <section className="grid gap-5 rounded-3xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 p-6 shadow-[0_0_40px_rgba(14,165,233,0.18)] lg:grid-cols-[1.2fr_0.8fr]">
@@ -586,6 +757,11 @@ const PlayerPage: React.FC = () => {
           <button onClick={() => void openMapMenu()} className="rounded-xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950">
             Create Session
           </button>
+          {playerSession && (
+            <button onClick={() => void leaveCurrentSession()} className="rounded-xl border border-rose-500 px-5 py-3 text-sm text-rose-200">
+              Leave Current Session
+            </button>
+          )}
           <a href="/library" className="rounded-xl border border-slate-500 px-5 py-3 text-sm text-slate-200">
             Browse Full Library
           </a>
@@ -686,6 +862,7 @@ const PlayerPage: React.FC = () => {
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-4 p-4 text-slate-100">
       <ReconnectBanner syncState={syncState} replayedDiffCount={replayedDiffCount} showSynced={showSyncedBanner} />
+      {joiningSession && <p className="rounded border border-sky-700 bg-sky-950 p-3 text-sky-100">Joining session and syncing the room state...</p>}
 
       {phase === "home" && renderHero()}
       {phase === "map" && renderMapMenu()}
@@ -703,6 +880,11 @@ const PlayerPage: React.FC = () => {
               <div className={`rounded px-3 py-2 text-xl font-semibold ${remainingSeconds <= 120 ? "bg-red-950 text-red-200" : "bg-slate-800"}`}>
                 {formatSeconds(remainingSeconds)}
               </div>
+              {!connected && playerSession && (
+                <button onClick={() => void retryRealtimeJoin()} className="rounded bg-sky-700 px-4 py-2 text-white">
+                  Retry Connect
+                </button>
+              )}
               {phase === "lobby" && playerSession.canSubmitActions && (
                 <button onClick={startHostedSession} className="rounded bg-emerald-600 px-4 py-2 text-white">
                   Start Session
@@ -734,33 +916,75 @@ const PlayerPage: React.FC = () => {
                 {status === "Completed" ? "Room complete." : "Session ended."}
               </div>
             )}
+            {status === "Completed" && (
+              <div className="flex flex-wrap gap-2 rounded border border-emerald-800 bg-slate-950 p-3">
+                <button onClick={() => void leaveCurrentSession()} className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium text-white">
+                  Return Home
+                </button>
+                <button onClick={() => void returnToMapMenu()} className="rounded border border-slate-500 px-4 py-2 text-sm text-slate-100">
+                  Choose Another Room
+                </button>
+              </div>
+            )}
             <RoomCanvas
               room={state.room}
               onInspect={(targetId) => {
                 void handleInspect(targetId);
               }}
-              onPickup={(targetId) => submitAction("pickup", targetId)}
+              onPickup={handlePickup}
               onHotspotFocus={setFocusedTargetId}
               selectedInventoryItemId={selectedInventoryItemId}
               selectedInventoryItem={selectedInventoryItem}
               interactionMode={inventoryInteractionMode}
+              disabled={isGameOver || !canSubmitActions}
             />
             <div className="flex flex-wrap items-center gap-2 rounded border border-slate-700 bg-slate-900 p-3">
               <span className="text-sm text-slate-300">Focused: {focusedHotspot?.name ?? "None"}</span>
-              <button
-                disabled={!focusedHotspot || isGameOver || !canSubmitActions}
-                onClick={() => focusedHotspot && void submitAction("inspect", focusedHotspot.id)}
-                className="rounded bg-slate-700 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Inspect
-              </button>
-              <button
-                disabled={!focusedHotspot || isGameOver || !canSubmitActions}
-                onClick={() => focusedHotspot && void submitAction("pickup", focusedHotspot.id)}
-                className="rounded bg-amber-700 px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Pickup
-              </button>
+              {(focusedHotspot ? quickActionsByHotspotId.get(focusedHotspot.id) ?? [] : []).map((action) => (
+                <button
+                  key={action.key}
+                  disabled={action.disabled}
+                  onClick={() => void executeQuickAction(focusedHotspot!.id, action.actionType)}
+                  className={`rounded px-3 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+                    action.actionType === "pickup" ? "bg-amber-700" : action.actionType === "use" ? "bg-sky-700" : "bg-slate-700"
+                  }`}
+                >
+                  {action.label}
+                </button>
+              ))}
+            </div>
+            <div className="rounded border border-slate-700 bg-slate-900 p-3">
+              <p className="text-sm text-slate-300">Hotspot actions (fallback controls)</p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {state.room.hotspots
+                  .filter((hotspot) => hotspot.visible)
+                  .map((hotspot) => {
+                    const actions = quickActionsByHotspotId.get(hotspot.id) ?? [];
+                    return (
+                      <div key={hotspot.id} className="rounded border border-slate-700 bg-slate-950 p-2">
+                        <p className="text-xs text-slate-200">{hotspot.name}</p>
+                        <div className="mt-2 flex gap-2">
+                          {actions.map((action) => (
+                            <button
+                              key={action.key}
+                              disabled={action.disabled}
+                              onClick={() => void executeQuickAction(hotspot.id, action.actionType)}
+                              className={`rounded px-2 py-1 text-xs text-white disabled:cursor-not-allowed disabled:opacity-40 ${
+                                action.actionType === "pickup"
+                                  ? "bg-amber-700"
+                                  : action.actionType === "use"
+                                    ? "bg-sky-700"
+                                    : "bg-slate-700"
+                              }`}
+                            >
+                              {action.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
             </div>
           </div>
 

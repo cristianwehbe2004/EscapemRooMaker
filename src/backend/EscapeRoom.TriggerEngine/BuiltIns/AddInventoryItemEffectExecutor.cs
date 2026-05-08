@@ -22,6 +22,10 @@ public class AddInventoryItemEffectExecutor : IEffectExecutor
             return result;
         }
 
+        item["quantity"] ??= 1;
+        item["stack"] ??= false;
+        item["status"] ??= "ready";
+
         var inventory = JsonStateHelpers.GetOrCreateArray(context.State, "inventory");
         var existing = inventory.FirstOrDefault(entry =>
             entry is JsonObject existingItem &&

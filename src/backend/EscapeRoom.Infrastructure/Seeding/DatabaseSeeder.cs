@@ -16,6 +16,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
     public async Task SeedAsync(CancellationToken cancellationToken = default)
     {
         await dbContext.Database.MigrateAsync(cancellationToken);
+        await ResetSessionsAsync(cancellationToken);
 
         var roleSeed =
             new[]
@@ -91,6 +92,18 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
         await dbContext.SaveChangesAsync(cancellationToken);
     }
 
+    private async Task ResetSessionsAsync(CancellationToken cancellationToken)
+    {
+        var sessions = await dbContext.Sessions.ToListAsync(cancellationToken);
+        if (sessions.Count == 0)
+        {
+            return;
+        }
+
+        dbContext.Sessions.RemoveRange(sessions);
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
     private async Task UpsertStarterRoomAsync(
         Guid creatorId,
         string name,
@@ -128,38 +141,107 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                 RoomName = "Clocktower Foyer",
                 Width = 960,
                 Height = 620,
-                BackgroundColor = "#121826",
+                ThemeId = "clocktower",
+                BackgroundColor = "#0b1220",
+                Assets =
+                [
+                    new RoomAssetDto { Id = "clocktower-wall", Kind = "background", VisualKind = "stone-wall", X = 0, Y = 0, Width = 960, Height = 620, ZIndex = 0, Visible = true, Opacity = 1, Color = "#111827" },
+                    new RoomAssetDto { Id = "clocktower-floor", Kind = "overlay", VisualKind = "floor-planks", X = 0, Y = 360, Width = 960, Height = 260, ZIndex = 1, Visible = true, Opacity = 1, Color = "#2b2018" },
+                    new RoomAssetDto { Id = "clocktower-window", Kind = "sprite", VisualKind = "round-window", X = 52, Y = 38, Width = 230, Height = 230, ZIndex = 2, Visible = true, Opacity = 1, Color = "#dbeafe" },
+                    new RoomAssetDto { Id = "clocktower-moonlight", Kind = "overlay", VisualKind = "moonlight", X = 110, Y = 180, Width = 220, Height = 280, ZIndex = 2, Visible = true, Opacity = 0.34, Color = "#93c5fd" },
+                    new RoomAssetDto { Id = "clocktower-upper-beam", Kind = "sprite", VisualKind = "beam", X = 0, Y = 72, Width = 960, Height = 32, ZIndex = 3, Visible = true, Opacity = 0.95, Color = "#4a2f23" },
+                    new RoomAssetDto { Id = "clocktower-post", Kind = "sprite", VisualKind = "beam", X = 458, Y = 92, Width = 28, Height = 316, ZIndex = 4, Visible = true, Opacity = 0.95, Color = "#4a2f23" },
+                    new RoomAssetDto { Id = "clocktower-stair", Kind = "sprite", VisualKind = "stair-silhouette", X = 198, Y = 142, Width = 254, Height = 212, ZIndex = 4, Visible = true, Opacity = 0.9, Color = "#3b2b21" },
+                    new RoomAssetDto { Id = "clocktower-shelf", Kind = "sprite", VisualKind = "bookshelf", X = 584, Y = 205, Width = 108, Height = 178, ZIndex = 4, Visible = true, Opacity = 0.92, Color = "#4b2c1d" },
+                    new RoomAssetDto { Id = "clocktower-crate", Kind = "sprite", VisualKind = "crate", X = 92, Y = 440, Width = 86, Height = 64, ZIndex = 4, Visible = true, Opacity = 0.95, Color = "#5f4632" },
+                    new RoomAssetDto { Id = "clocktower-workbench", Kind = "sprite", VisualKind = "workbench", X = 145, Y = 352, Width = 318, Height = 176, ZIndex = 5, Visible = true, Opacity = 1, Color = "#70492f" },
+                    new RoomAssetDto { Id = "clocktower-door-frame", Kind = "sprite", VisualKind = "door-frame", X = 696, Y = 138, Width = 182, Height = 330, ZIndex = 5, Visible = true, Opacity = 1, Color = "#3a261a" },
+                    new RoomAssetDto { Id = "clocktower-candle", Kind = "sprite", VisualKind = "candle", X = 626, Y = 320, Width = 38, Height = 74, ZIndex = 6, Visible = true, Opacity = 1, Color = "#fb923c" },
+                    new RoomAssetDto { Id = "clocktower-papers", Kind = "sprite", VisualKind = "paper-scatter", X = 472, Y = 496, Width = 112, Height = 44, ZIndex = 6, Visible = true, Opacity = 0.88, Color = "#f8fafc" }
+                ],
                 Hotspots =
                 [
                     new RoomHotspotDto
                     {
-                        Id = "note-panel",
-                        Name = "Note Panel",
-                        X = 120,
-                        Y = 180,
-                        Width = 160,
-                        Height = 90,
-                        Color = "#f59e0b"
-                    },
-                    new RoomHotspotDto
-                    {
-                        Id = "key-hook",
-                        Name = "Key Hook",
-                        X = 360,
-                        Y = 180,
-                        Width = 120,
-                        Height = 90,
-                        Color = "#10b981"
-                    },
-                    new RoomHotspotDto
-                    {
                         Id = "final-door",
                         Name = "Final Door",
-                        X = 710,
-                        Y = 120,
-                        Width = 170,
-                        Height = 360,
-                        Color = "#f97316",
+                        VisualKind = "door",
+                        Variant = "locked",
+                        X = 714,
+                        Y = 150,
+                        Width = 146,
+                        Height = 300,
+                        Color = "#7a4a2a",
+                        Locked = true,
+                        Available = false,
+                        Interactive = false
+                    },
+                    new RoomHotspotDto
+                    {
+                        Id = "door-note",
+                        Name = "Door Note",
+                        VisualKind = "note",
+                        Variant = "attached",
+                        X = 748,
+                        Y = 198,
+                        Width = 82,
+                        Height = 68,
+                        Color = "#fde047"
+                    },
+                    new RoomHotspotDto
+                    {
+                        Id = "left-drawer",
+                        Name = "Left Drawer",
+                        VisualKind = "drawer",
+                        Variant = "ajar",
+                        X = 214,
+                        Y = 410,
+                        Width = 108,
+                        Height = 58,
+                        Color = "#7a5035",
+                        Locked = false,
+                        Available = true
+                    },
+                    new RoomHotspotDto
+                    {
+                        Id = "right-drawer",
+                        Name = "Right Drawer",
+                        VisualKind = "drawer",
+                        Variant = "ajar",
+                        X = 332,
+                        Y = 410,
+                        Width = 108,
+                        Height = 58,
+                        Color = "#7a5035",
+                        Locked = false,
+                        Available = true
+                    },
+                    new RoomHotspotDto
+                    {
+                        Id = "clocktower-key",
+                        Name = "Brass Key",
+                        VisualKind = "key",
+                        Variant = "hidden",
+                        X = 294,
+                        Y = 392,
+                        Width = 76,
+                        Height = 32,
+                        Color = "#f6d365",
+                        Visible = false,
+                        Available = false,
+                        Interactive = false
+                    },
+                    new RoomHotspotDto
+                    {
+                        Id = "final-lock",
+                        Name = "Final Lock",
+                        VisualKind = "lock",
+                        Variant = "locked",
+                        X = 790,
+                        Y = 296,
+                        Width = 56,
+                        Height = 76,
+                        Color = "#f4b860",
                         Locked = true,
                         TargetableModes = ["use"],
                         TargetableItemIds = ["brass-key"]
@@ -167,12 +249,19 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                 ],
                 ObjectStates =
                 [
-                    new RoomObjectStateDto { Id = "key-hook", Visible = true, Available = true, Locked = false, Interactive = true },
-                    new RoomObjectStateDto { Id = "final-door", Visible = true, Available = true, Locked = true, Interactive = true }
+                    new RoomObjectStateDto { Id = "door-note", Visible = true, Available = true, Locked = false, Interactive = true },
+                    new RoomObjectStateDto { Id = "left-drawer", Visible = true, Available = true, Locked = false, Interactive = true },
+                    new RoomObjectStateDto { Id = "right-drawer", Visible = true, Available = true, Locked = false, Interactive = true },
+                    new RoomObjectStateDto { Id = "clocktower-key", Visible = false, Available = false, Locked = false, Interactive = false },
+                    new RoomObjectStateDto { Id = "final-lock", Visible = true, Available = true, Locked = true, Interactive = true },
+                    new RoomObjectStateDto { Id = "final-door", Visible = true, Available = false, Locked = true, Interactive = false }
                 ],
                 Layers =
                 [
-                    new RoomLayerDto { Id = "fog", Name = "Warm Fog", ZIndex = 1, Color = "#1e293b", Opacity = 0.12 }
+                    new RoomLayerDto { Id = "clocktower-moon-glow", Name = "Moon Glow", VisualKind = "moon-glow", ZIndex = 7, Color = "#93c5fd", Opacity = 0.12 },
+                    new RoomLayerDto { Id = "clocktower-warm-shadow", Name = "Torch Shadow", VisualKind = "warm-shadow", ZIndex = 8, Color = "#fb923c", Opacity = 0.16 },
+                    new RoomLayerDto { Id = "clocktower-vignette", Name = "Vignette", VisualKind = "vignette", ZIndex = 9, Color = "#020617", Opacity = 0.14 },
+                    new RoomLayerDto { Id = "clocktower-dust", Name = "Dust", VisualKind = "dust", ZIndex = 10, Color = "#cbd5e1", Opacity = 0.08 }
                 ]
             },
             TriggerGraph = new TriggerGraphDefinition
@@ -198,7 +287,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         NodeId = "inspect-note-target",
                         Family = "condition",
                         Type = "targetEquals",
-                        Config = new Dictionary<string, object?> { ["targetId"] = "note-panel" }
+                        Config = new Dictionary<string, object?> { ["targetId"] = "door-note" }
                     },
                     new TriggerNodeDefinition
                     {
@@ -213,10 +302,181 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         Type = "emitClue",
                         Config = new Dictionary<string, object?>
                         {
-                            ["clue"] = "A scribble reads: 'The brass key opens the last door.'"
+                            ["clue"] = "A scribble on the door reads: 'The key waits where the wood seam loosens.'"
                         }
                     },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-note-unlock-drawer",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "left-drawer",
+                            ["locked"] = false,
+                            ["available"] = true,
+                            ["interactive"] = true
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-note-enable-right-drawer",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "right-drawer",
+                            ["locked"] = false,
+                            ["available"] = true,
+                            ["interactive"] = true
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "pickup-note-action",
+                        Family = "condition",
+                        Type = "actionTypeEquals",
+                        Config = new Dictionary<string, object?> { ["expectedActionType"] = "pickup" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "pickup-note-target",
+                        Family = "condition",
+                        Type = "targetEquals",
+                        Config = new Dictionary<string, object?> { ["targetId"] = "door-note" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "pickup-note-all",
+                        Family = "combinator",
+                        Type = "allTrue"
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "pickup-note-add",
+                        Family = "effect",
+                        Type = "addInventoryItem",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["id"] = "door-note",
+                            ["label"] = "Yellow Door Note",
+                            ["type"] = "clue"
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "pickup-note-hide",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "door-note",
+                            ["available"] = false,
+                            ["visible"] = false,
+                            ["interactive"] = false
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "pickup-note-msg",
+                        Family = "effect",
+                        Type = "emitMessage",
+                        Config = new Dictionary<string, object?> { ["message"] = "You picked up the yellow note from the door." }
+                    },
 
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-drawer-action",
+                        Family = "condition",
+                        Type = "actionTypeEquals",
+                        Config = new Dictionary<string, object?> { ["expectedActionType"] = "inspect" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-drawer-target",
+                        Family = "condition",
+                        Type = "targetEquals",
+                        Config = new Dictionary<string, object?> { ["targetId"] = "left-drawer" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-drawer-all",
+                        Family = "combinator",
+                        Type = "allTrue"
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-drawer-reveal-key",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "clocktower-key",
+                            ["visible"] = true,
+                            ["available"] = true,
+                            ["interactive"] = true
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-drawer-open-drawer",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "left-drawer",
+                            ["locked"] = false,
+                            ["available"] = false,
+                            ["interactive"] = false
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-drawer-msg",
+                        Family = "effect",
+                        Type = "emitMessage",
+                        Config = new Dictionary<string, object?> { ["message"] = "The drawer slides open and a brass key glints inside." }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-right-drawer-action",
+                        Family = "condition",
+                        Type = "actionTypeEquals",
+                        Config = new Dictionary<string, object?> { ["expectedActionType"] = "inspect" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-right-drawer-target",
+                        Family = "condition",
+                        Type = "targetEquals",
+                        Config = new Dictionary<string, object?> { ["targetId"] = "right-drawer" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-right-drawer-all",
+                        Family = "combinator",
+                        Type = "allTrue"
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-right-drawer-open",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "right-drawer",
+                            ["locked"] = false,
+                            ["available"] = false,
+                            ["interactive"] = false
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-right-drawer-msg",
+                        Family = "effect",
+                        Type = "emitMessage",
+                        Config = new Dictionary<string, object?> { ["message"] = "You open the right drawer. It is empty." }
+                    },
                     new TriggerNodeDefinition
                     {
                         NodeId = "pickup-key-action",
@@ -229,7 +489,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         NodeId = "pickup-key-target",
                         Family = "condition",
                         Type = "targetEquals",
-                        Config = new Dictionary<string, object?> { ["targetId"] = "key-hook" }
+                        Config = new Dictionary<string, object?> { ["targetId"] = "clocktower-key" }
                     },
                     new TriggerNodeDefinition
                     {
@@ -244,16 +504,9 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         Type = "addInventoryItem",
                         Config = new Dictionary<string, object?>
                         {
-                            ["item"] = new Dictionary<string, object?>
-                            {
-                                ["id"] = "brass-key",
-                                ["label"] = "Brass Key",
-                                ["type"] = "key",
-                                ["quantity"] = 1,
-                                ["stack"] = false,
-                                ["status"] = "ready",
-                                ["usableTargetIds"] = new[] { "final-door" }
-                            }
+                            ["id"] = "brass-key",
+                            ["label"] = "Brass Key",
+                            ["type"] = "key"
                         }
                     },
                     new TriggerNodeDefinition
@@ -263,7 +516,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         Type = "setObjectState",
                         Config = new Dictionary<string, object?>
                         {
-                            ["objectId"] = "key-hook",
+                            ["objectId"] = "clocktower-key",
                             ["available"] = false,
                             ["visible"] = false,
                             ["interactive"] = false
@@ -289,7 +542,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         NodeId = "use-door-target",
                         Family = "condition",
                         Type = "targetEquals",
-                        Config = new Dictionary<string, object?> { ["targetId"] = "final-door" }
+                        Config = new Dictionary<string, object?> { ["targetId"] = "final-lock" }
                     },
                     new TriggerNodeDefinition
                     {
@@ -329,10 +582,23 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         Type = "setObjectState",
                         Config = new Dictionary<string, object?>
                         {
+                            ["objectId"] = "final-lock",
+                            ["locked"] = false,
+                            ["interactive"] = false,
+                            ["available"] = false
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "use-door-open",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
                             ["objectId"] = "final-door",
                             ["locked"] = false,
-                            ["interactive"] = true,
-                            ["available"] = true
+                            ["interactive"] = false,
+                            ["available"] = false
                         }
                     },
                     new TriggerNodeDefinition
@@ -340,7 +606,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                         NodeId = "use-door-complete",
                         Family = "effect",
                         Type = "completeSession",
-                        Config = new Dictionary<string, object?> { ["message"] = "You unlocked the final door and escaped." }
+                        Config = new Dictionary<string, object?> { ["message"] = "The lock clicks, the door swings open, and the room clears." }
                     }
                 ],
                 Edges =
@@ -348,6 +614,25 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     new TriggerEdgeDefinition { FromNodeId = "inspect-note-action", ToNodeId = "inspect-note-all" },
                     new TriggerEdgeDefinition { FromNodeId = "inspect-note-target", ToNodeId = "inspect-note-all" },
                     new TriggerEdgeDefinition { FromNodeId = "inspect-note-all", ToNodeId = "inspect-note-clue" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-note-all", ToNodeId = "inspect-note-unlock-drawer" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-note-all", ToNodeId = "inspect-note-enable-right-drawer" },
+
+                    new TriggerEdgeDefinition { FromNodeId = "pickup-note-action", ToNodeId = "pickup-note-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "pickup-note-target", ToNodeId = "pickup-note-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "pickup-note-all", ToNodeId = "pickup-note-add" },
+                    new TriggerEdgeDefinition { FromNodeId = "pickup-note-all", ToNodeId = "pickup-note-hide" },
+                    new TriggerEdgeDefinition { FromNodeId = "pickup-note-all", ToNodeId = "pickup-note-msg" },
+
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-drawer-action", ToNodeId = "inspect-drawer-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-drawer-target", ToNodeId = "inspect-drawer-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-drawer-all", ToNodeId = "inspect-drawer-reveal-key" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-drawer-all", ToNodeId = "inspect-drawer-open-drawer" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-drawer-all", ToNodeId = "inspect-drawer-msg" },
+
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-right-drawer-action", ToNodeId = "inspect-right-drawer-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-right-drawer-target", ToNodeId = "inspect-right-drawer-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-right-drawer-all", ToNodeId = "inspect-right-drawer-open" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-right-drawer-all", ToNodeId = "inspect-right-drawer-msg" },
 
                     new TriggerEdgeDefinition { FromNodeId = "pickup-key-action", ToNodeId = "pickup-key-all" },
                     new TriggerEdgeDefinition { FromNodeId = "pickup-key-target", ToNodeId = "pickup-key-all" },
@@ -361,6 +646,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     new TriggerEdgeDefinition { FromNodeId = "use-door-payload-item", ToNodeId = "use-door-all" },
                     new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-remove-key" },
                     new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-unlock" },
+                    new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-open" },
                     new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-complete" }
                 ]
             }
@@ -376,13 +662,23 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                 RoomName = "Crypt of Echoes",
                 Width = 1024,
                 Height = 640,
-                BackgroundColor = "#0f172a",
+                ThemeId = "crypt",
+                BackgroundColor = "#0b1020",
+                Assets =
+                [
+                    new RoomAssetDto { Id = "crypt-wall", Kind = "background", VisualKind = "stone-wall", X = 0, Y = 0, Width = 1024, Height = 640, ZIndex = 0, Visible = true, Opacity = 1, Color = "#0b1020" },
+                    new RoomAssetDto { Id = "crypt-floor", Kind = "overlay", VisualKind = "floor-planks", X = 0, Y = 450, Width = 1024, Height = 190, ZIndex = 1, Visible = true, Opacity = 0.72, Color = "#1e293b" },
+                    new RoomAssetDto { Id = "crypt-rune-altar", Kind = "sprite", VisualKind = "workbench", X = 92, Y = 110, Width = 250, Height = 180, ZIndex = 2, Visible = true, Opacity = 0.82, Color = "#3b2b4a" },
+                    new RoomAssetDto { Id = "crypt-gate-frame", Kind = "sprite", VisualKind = "door-frame", X = 760, Y = 110, Width = 220, Height = 410, ZIndex = 2, Visible = true, Opacity = 1, Color = "#243447" }
+                ],
                 Hotspots =
                 [
                     new RoomHotspotDto
                     {
                         Id = "rune-wall",
                         Name = "Rune Wall",
+                        VisualKind = "note",
+                        Variant = "etched",
                         X = 120,
                         Y = 130,
                         Width = 200,
@@ -393,6 +689,8 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     {
                         Id = "torch-handle-cache",
                         Name = "Torch Handle",
+                        VisualKind = "switch",
+                        Variant = "loose",
                         X = 380,
                         Y = 140,
                         Width = 130,
@@ -403,6 +701,8 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     {
                         Id = "oil-flask-cache",
                         Name = "Oil Flask",
+                        VisualKind = "note",
+                        Variant = "flask",
                         X = 560,
                         Y = 150,
                         Width = 130,
@@ -413,6 +713,8 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     {
                         Id = "shadow-niche",
                         Name = "Shadow Niche",
+                        VisualKind = "drawer",
+                        Variant = "sealed",
                         X = 240,
                         Y = 340,
                         Width = 200,
@@ -426,6 +728,8 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     {
                         Id = "iron-key-cache",
                         Name = "Hidden Iron Key",
+                        VisualKind = "key",
+                        Variant = "hidden",
                         X = 500,
                         Y = 360,
                         Width = 140,
@@ -439,6 +743,8 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     {
                         Id = "final-gate",
                         Name = "Final Gate",
+                        VisualKind = "door",
+                        Variant = "locked",
                         X = 780,
                         Y = 120,
                         Width = 180,
@@ -459,8 +765,9 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                 ],
                 Layers =
                 [
-                    new RoomLayerDto { Id = "mist", Name = "Mist", ZIndex = 1, Color = "#94a3b8", Opacity = 0.09 },
-                    new RoomLayerDto { Id = "moon", Name = "Moonlight", ZIndex = 2, Color = "#38bdf8", Opacity = 0.05 }
+                    new RoomLayerDto { Id = "crypt-mist", Name = "Mist", VisualKind = "dust", ZIndex = 3, Color = "#94a3b8", Opacity = 0.08 },
+                    new RoomLayerDto { Id = "crypt-violet-haze", Name = "Violet Haze", VisualKind = "warm-shadow", ZIndex = 4, Color = "#7c3aed", Opacity = 0.07 },
+                    new RoomLayerDto { Id = "crypt-vignette", Name = "Vignette", VisualKind = "vignette", ZIndex = 5, Color = "#020617", Opacity = 0.16 }
                 ]
             },
             TriggerGraph = new TriggerGraphDefinition

@@ -18,7 +18,10 @@ builder.Host.UseSerilog((ctx, lc) => lc
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddSignalR();
+builder.Services.AddSignalR(options =>
+{
+    options.EnableDetailedErrors = true;
+});
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddSingleton<IPlayerPresenceTracker, InMemoryPlayerPresenceTracker>();
 builder.Services.Configure<ActionRateLimitOptions>(builder.Configuration.GetSection(ActionRateLimitOptions.SectionName));

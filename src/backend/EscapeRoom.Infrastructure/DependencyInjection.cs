@@ -35,6 +35,7 @@ public static class DependencyInjection
         services.AddScoped<IJwtTokenService, JwtTokenService>();
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IGmPanelQueryService, GmPanelQueryService>();
+        services.AddScoped<ISessionSnapshotHydrator, PersistentSessionSnapshotHydrator>();
         services.AddScoped<ICreatorRoomService, CreatorRoomService>();
         services.AddScoped<ILibraryService, LibraryService>();
         services.AddScoped<IPlayerSessionService, PlayerSessionService>();

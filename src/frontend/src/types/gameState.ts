@@ -12,6 +12,8 @@ export type InventoryItem = {
 export type RoomAsset = {
   id: string;
   kind: "background" | "sprite" | "overlay";
+  visualKind?: string;
+  variant?: string;
   x: number;
   y: number;
   width: number;
@@ -27,6 +29,7 @@ export type RoomAsset = {
 export type RoomLayer = {
   id: string;
   name: string;
+  visualKind?: string;
   zIndex: number;
   visible: boolean;
   opacity: number;
@@ -46,6 +49,8 @@ export type RoomObjectState = {
 export type RoomHotspot = {
   id: string;
   name: string;
+  visualKind?: string;
+  variant?: string;
   x: number;
   y: number;
   width: number;
@@ -64,6 +69,7 @@ export type RoomHotspot = {
 
 export type RoomState = {
   roomName: string;
+  themeId?: string;
   width: number;
   height: number;
   backgroundColor: string;

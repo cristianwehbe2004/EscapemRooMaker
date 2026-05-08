@@ -8,16 +8,19 @@ using Microsoft.AspNetCore.SignalR;
 using EscapeRoom.Realtime.Presence;
 using EscapeRoom.Realtime.RateLimiting;
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 
 namespace EscapeRoom.Realtime.Hubs;
 
 public class GameHub(
     ISessionActionProcessor sessionActionProcessor,
     ISessionStateStore sessionStateStore,
+    ISessionSnapshotHydrator sessionSnapshotHydrator,
     IPlayerSessionService playerSessionService,
     IPlayerPresenceTracker playerPresenceTracker,
     IGmPanelQueryService gmPanelQueryService,
-    IActionRateLimiter actionRateLimiter) : Hub
+    IActionRateLimiter actionRateLimiter,
+    ILogger<GameHub> logger) : Hub
 {
     public Task Ping() => Clients.Caller.SendAsync("Pong", DateTime.UtcNow);
 
@@ -36,45 +39,116 @@ public class GameHub(
         Guid sessionId,
         int? lastKnownVersion = null,
         string? displayName = null,
-        string? guestActorId = null,
-        CancellationToken cancellationToken = default)
+        string? guestActorId = null)
     {
-        await Groups.AddToGroupAsync(Context.ConnectionId, SessionGroup(sessionId));
-        var connected = playerPresenceTracker.TrackConnected(
+        var cancellationToken = Context.ConnectionAborted;
+        logger.LogWarning(
+            "JoinSession requested. SessionId={SessionId} ConnectionId={ConnectionId} LastKnownVersion={LastKnownVersion} DisplayName={DisplayName} GuestActorId={GuestActorId}",
             sessionId,
-            ResolveActor(guestActorId),
-            ResolveDisplayName(displayName, guestActorId),
-            Context.ConnectionId);
-        await Clients.Group(SessionGroup(sessionId)).SendAsync("PlayerPresenceChanged", connected, cancellationToken);
+            Context.ConnectionId,
+            lastKnownVersion,
+            displayName,
+            guestActorId);
 
-        var replayCount = 0;
-        if (lastKnownVersion.HasValue)
+        try
         {
-            var replayDiffs = await sessionStateStore.GetDiffsAfterVersionAsync(sessionId, lastKnownVersion.Value, cancellationToken);
-            foreach (var diff in replayDiffs.OrderBy(x => x.DiffSequence))
+            await Groups.AddToGroupAsync(Context.ConnectionId, SessionGroup(sessionId));
+            logger.LogWarning("JoinSession group attach succeeded. SessionId={SessionId} ConnectionId={ConnectionId}", sessionId, Context.ConnectionId);
+
+            var connected = playerPresenceTracker.TrackConnected(
+                sessionId,
+                ResolveActor(guestActorId),
+                ResolveDisplayName(displayName, guestActorId),
+                Context.ConnectionId);
+            await Clients.Group(SessionGroup(sessionId)).SendAsync("PlayerPresenceChanged", connected, cancellationToken);
+            logger.LogWarning(
+                "JoinSession presence tracked. SessionId={SessionId} ConnectionId={ConnectionId} ActorId={ActorId} DisplayName={ResolvedDisplayName}",
+                sessionId,
+                Context.ConnectionId,
+                connected.PlayerId,
+                connected.DisplayName);
+
+            var replayCount = 0;
+            var currentVersion = 0;
+
+            if (lastKnownVersion.HasValue)
             {
-                await Clients.Caller.SendAsync("StateDiff", diff, cancellationToken);
-                replayCount++;
+                try
+                {
+                    var replayDiffs = await sessionStateStore.GetDiffsAfterVersionAsync(sessionId, lastKnownVersion.Value, cancellationToken);
+                    logger.LogWarning(
+                        "JoinSession replay lookup complete. SessionId={SessionId} LastKnownVersion={LastKnownVersion} ReplayCount={ReplayCount}",
+                        sessionId,
+                        lastKnownVersion.Value,
+                        replayDiffs.Count);
+                    foreach (var diff in replayDiffs.OrderBy(x => x.DiffSequence))
+                    {
+                        await Clients.Caller.SendAsync("StateDiff", diff, cancellationToken);
+                        replayCount++;
+                        currentVersion = Math.Max(currentVersion, diff.SessionVersion);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(
+                        ex,
+                        "JoinSession replay failed; falling back to snapshot. SessionId={SessionId} LastKnownVersion={LastKnownVersion}",
+                        sessionId,
+                        lastKnownVersion.Value);
+                }
             }
-        }
 
-        if (replayCount == 0)
-        {
-            var snapshot = await sessionStateStore.GetSnapshotAsync(sessionId, cancellationToken);
-            if (snapshot is not null)
+            if (replayCount == 0)
             {
-                AttachPresence(sessionId, snapshot);
-                await Clients.Caller.SendAsync("SessionSnapshot", snapshot, cancellationToken);
+                try
+                {
+                    var snapshot = await sessionSnapshotHydrator.GetOrHydrateAsync(sessionId, cancellationToken);
+                    if (snapshot is not null)
+                    {
+                        AttachPresence(sessionId, snapshot);
+                        await Clients.Caller.SendAsync("SessionSnapshot", snapshot, cancellationToken);
+                        currentVersion = snapshot.SessionVersion;
+                        logger.LogWarning(
+                            "JoinSession snapshot sent. SessionId={SessionId} SnapshotVersion={SnapshotVersion}",
+                            sessionId,
+                            snapshot.SessionVersion);
+                    }
+                    else
+                    {
+                        logger.LogWarning("JoinSession snapshot not found. SessionId={SessionId}", sessionId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "JoinSession snapshot fallback failed. SessionId={SessionId}", sessionId);
+                }
             }
-        }
 
-        return new JoinSessionAck
+            logger.LogWarning(
+                "JoinSession completed. SessionId={SessionId} ConnectionId={ConnectionId} ReplayedDiffCount={ReplayedDiffCount} CurrentVersion={CurrentVersion}",
+                sessionId,
+                Context.ConnectionId,
+                replayCount,
+                currentVersion);
+
+            return new JoinSessionAck
+            {
+                SessionId = sessionId,
+                ReplayedDiffCount = replayCount,
+                LastKnownVersion = lastKnownVersion,
+                CurrentVersion = currentVersion
+            };
+        }
+        catch (Exception ex)
         {
-            SessionId = sessionId,
-            ReplayedDiffCount = replayCount,
-            LastKnownVersion = lastKnownVersion,
-            CurrentVersion = (await sessionStateStore.GetSnapshotAsync(sessionId, cancellationToken))?.SessionVersion ?? 0
-        };
+            logger.LogError(
+                ex,
+                "JoinSession failed. SessionId={SessionId} ConnectionId={ConnectionId} LastKnownVersion={LastKnownVersion}",
+                sessionId,
+                Context.ConnectionId,
+                lastKnownVersion);
+            throw new HubException($"JoinSession failed: {ex.Message}");
+        }
     }
 
     public async Task<LeaveSessionAck> LeaveSession(Guid sessionId)
@@ -89,8 +163,9 @@ public class GameHub(
         return new LeaveSessionAck { SessionId = sessionId };
     }
 
-    public async Task<StateDiffEnvelope> SubmitAction(Guid sessionId, PlayerActionEnvelope action, CancellationToken cancellationToken = default)
+    public async Task<StateDiffEnvelope> SubmitAction(Guid sessionId, PlayerActionEnvelope action)
     {
+        var cancellationToken = Context.ConnectionAborted;
         if (string.IsNullOrWhiteSpace(action.Actor))
         {
             action.Actor = ResolveActor();
@@ -119,7 +194,7 @@ public class GameHub(
     }
 
     [Authorize(Policy = "GMOnly")]
-    public Task<StateDiffEnvelope> SubmitGmHint(Guid sessionId, GmHintAction hint, CancellationToken cancellationToken = default)
+    public Task<StateDiffEnvelope> SubmitGmHint(Guid sessionId, GmHintAction hint)
         => SubmitAction(sessionId, BuildGmAction(
             "gm.hint",
             hint.Target,
@@ -128,10 +203,10 @@ public class GameHub(
                 ["hint"] = hint.Hint,
                 ["scope"] = hint.Scope
             },
-            hint.ClientActionId), cancellationToken);
+            hint.ClientActionId));
 
     [Authorize(Policy = "GMOnly")]
-    public Task<StateDiffEnvelope> SubmitGmControl(Guid sessionId, GmControlAction control, CancellationToken cancellationToken = default)
+    public Task<StateDiffEnvelope> SubmitGmControl(Guid sessionId, GmControlAction control)
     {
         if (string.IsNullOrWhiteSpace(control.ControlType))
         {
@@ -143,12 +218,13 @@ public class GameHub(
             ? normalized
             : $"gm.{normalized}";
 
-        return SubmitAction(sessionId, BuildGmAction(actionType, control.Target, control.Payload, control.ClientActionId), cancellationToken);
+        return SubmitAction(sessionId, BuildGmAction(actionType, control.Target, control.Payload, control.ClientActionId));
     }
 
     [Authorize(Policy = "GMOnly")]
-    public async Task<StateDiffEnvelope> ForceSyncSession(Guid sessionId, CancellationToken cancellationToken = default)
+    public async Task<StateDiffEnvelope> ForceSyncSession(Guid sessionId)
     {
+        var cancellationToken = Context.ConnectionAborted;
         var diff = await SubmitGmControl(sessionId, new GmControlAction
         {
             ControlType = "force_sync",
@@ -156,15 +232,15 @@ public class GameHub(
             {
                 ["requestedBy"] = ResolveActor()
             }
-        }, cancellationToken);
+        });
 
-        var snapshot = await RequestSnapshot(sessionId, cancellationToken);
+        var snapshot = await RequestSnapshot(sessionId);
         await Clients.Group(SessionGroup(sessionId)).SendAsync("SessionSnapshot", snapshot, cancellationToken);
         return diff;
     }
 
     [Authorize(Policy = "GMOnly")]
-    public Task<StateDiffEnvelope> RevealPuzzle(Guid sessionId, string puzzleId, string? target = null, CancellationToken cancellationToken = default)
+    public Task<StateDiffEnvelope> RevealPuzzle(Guid sessionId, string puzzleId, string? target = null)
         => SubmitGmControl(sessionId, new GmControlAction
         {
             ControlType = "reveal",
@@ -173,10 +249,10 @@ public class GameHub(
             {
                 ["puzzleId"] = puzzleId
             }
-        }, cancellationToken);
+        });
 
     [Authorize(Policy = "GMOnly")]
-    public Task<StateDiffEnvelope> BroadcastMessage(Guid sessionId, string message, string? target = null, CancellationToken cancellationToken = default)
+    public Task<StateDiffEnvelope> BroadcastMessage(Guid sessionId, string message, string? target = null)
         => SubmitGmControl(sessionId, new GmControlAction
         {
             ControlType = "broadcast",
@@ -185,11 +261,12 @@ public class GameHub(
             {
                 ["message"] = message
             }
-        }, cancellationToken);
+        });
 
     [Authorize(Policy = "GMOnly")]
-    public async Task<IReadOnlyList<GmSessionSummary>> GetActiveSessions(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<GmSessionSummary>> GetActiveSessions()
     {
+        var cancellationToken = Context.ConnectionAborted;
         var sessions = (await gmPanelQueryService.GetActiveSessionsAsync(cancellationToken)).ToList();
         foreach (var session in sessions)
         {
@@ -200,23 +277,28 @@ public class GameHub(
     }
 
     [Authorize(Policy = "GMOnly")]
-    public Task<IReadOnlyList<SessionTimelineEntry>> GetSessionTimeline(Guid sessionId, int take = 100, CancellationToken cancellationToken = default)
-        => gmPanelQueryService.GetSessionTimelineAsync(sessionId, take, cancellationToken);
+    public Task<IReadOnlyList<SessionTimelineEntry>> GetSessionTimeline(Guid sessionId, int take = 100)
+    {
+        var cancellationToken = Context.ConnectionAborted;
+        return gmPanelQueryService.GetSessionTimelineAsync(sessionId, take, cancellationToken);
+    }
 
     [Authorize(Policy = "GMOnly")]
     public Task<IReadOnlyList<PlayerPresenceEvent>> GetPlayerPresence(Guid sessionId)
         => Task.FromResult(playerPresenceTracker.GetSessionPresence(sessionId));
 
-    public async Task<SessionSnapshotEnvelope> RequestSnapshot(Guid sessionId, CancellationToken cancellationToken = default)
+    public async Task<SessionSnapshotEnvelope> RequestSnapshot(Guid sessionId)
     {
-        var snapshot = await sessionStateStore.GetSnapshotAsync(sessionId, cancellationToken)
+        var cancellationToken = Context.ConnectionAborted;
+        var snapshot = await sessionSnapshotHydrator.GetOrHydrateAsync(sessionId, cancellationToken)
             ?? throw new InvalidOperationException($"No snapshot found for session '{sessionId}'.");
         AttachPresence(sessionId, snapshot);
         return snapshot;
     }
 
-    public async Task<RecoverSessionResult> RecoverSession(Guid sessionId, int lastKnownVersion, CancellationToken cancellationToken = default)
+    public async Task<RecoverSessionResult> RecoverSession(Guid sessionId, int lastKnownVersion)
     {
+        var cancellationToken = Context.ConnectionAborted;
         var replayDiffs = await sessionStateStore.GetDiffsAfterVersionAsync(sessionId, lastKnownVersion, cancellationToken);
         foreach (var diff in replayDiffs.OrderBy(x => x.DiffSequence))
         {
@@ -225,7 +307,7 @@ public class GameHub(
 
         if (replayDiffs.Count == 0)
         {
-            var snapshot = await sessionStateStore.GetSnapshotAsync(sessionId, cancellationToken)
+            var snapshot = await sessionSnapshotHydrator.GetOrHydrateAsync(sessionId, cancellationToken)
                 ?? throw new InvalidOperationException($"No snapshot found for session '{sessionId}'.");
             AttachPresence(sessionId, snapshot);
             await Clients.Caller.SendAsync("SessionSnapshot", snapshot, cancellationToken);
@@ -305,7 +387,8 @@ public class GameHub(
 
     private void AttachPresence(Guid sessionId, SessionSnapshotEnvelope snapshot)
     {
-        snapshot.PlayerPresence = playerPresenceTracker.GetSessionPresence(sessionId).ToList();
+        snapshot.PlayerPresence = (playerPresenceTracker.GetSessionPresence(sessionId) ?? [])
+            .ToList();
     }
 
     private static string SessionGroup(Guid sessionId) => $"session:{sessionId}";

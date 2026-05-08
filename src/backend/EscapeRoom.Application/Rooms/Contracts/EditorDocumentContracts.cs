@@ -11,6 +11,7 @@ public class EditorDocumentDto
 public class VisualRoomDto
 {
     public string RoomName { get; set; } = "Escape Room";
+    public string? ThemeId { get; set; }
     public int Width { get; set; } = 900;
     public int Height { get; set; } = 600;
     public string BackgroundColor { get; set; } = "#0b1220";
@@ -24,6 +25,8 @@ public class RoomAssetDto
 {
     public string Id { get; set; } = string.Empty;
     public string Kind { get; set; } = "sprite";
+    public string? VisualKind { get; set; }
+    public string? Variant { get; set; }
     public double X { get; set; }
     public double Y { get; set; }
     public double Width { get; set; }
@@ -40,6 +43,7 @@ public class RoomLayerDto
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string? VisualKind { get; set; }
     public int ZIndex { get; set; }
     public bool Visible { get; set; } = true;
     public double Opacity { get; set; } = 1;
@@ -52,6 +56,8 @@ public class RoomHotspotDto
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string? VisualKind { get; set; }
+    public string? Variant { get; set; }
     public double X { get; set; }
     public double Y { get; set; }
     public double Width { get; set; }
