@@ -21,7 +21,7 @@ const featuredRoomsResponse = {
       viewerRating: null,
       isFeatured: true,
       difficulty: "easy",
-      estimatedMinutes: 8,
+      estimatedMinutes: 3,
     },
     {
       roomId: "room-hard",
@@ -46,12 +46,12 @@ const buildSessionSummary = (overrides?: Partial<Record<string, unknown>>) => ({
   roomId: "room-easy",
   roomName: "Clocktower Foyer",
   status: "Pending",
-  durationMinutes: 10,
+  durationMinutes: 3,
   startedAtUtc: new Date().toISOString(),
   endedAtUtc: null,
-  endsAtUtc: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+  endsAtUtc: new Date(Date.now() + 3 * 60 * 1000).toISOString(),
   serverTimeUtc: new Date().toISOString(),
-  remainingSeconds: 600,
+  remainingSeconds: 180,
   isQuickPlay: false,
   playerJoinPath: "/player?sessionId=session-123",
   gmJoinPath: "/gm?sessionId=session-123",
@@ -343,7 +343,7 @@ describe("PlayerPage", () => {
     });
 
     expect(screen.getByRole("button", { name: "Open" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Pickup" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pickup" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Open" }));
     await waitFor(() => {
@@ -406,6 +406,73 @@ describe("PlayerPage", () => {
 
     const useButtonBeforeMode = screen.getAllByRole("button", { name: "Use" }).find((button) => button.hasAttribute("disabled"));
     expect(useButtonBeforeMode).toBeDefined();
+
+    fireEvent.click(screen.getByRole("button", { name: /Brass Key/i }));
+    const useButtonsAfterSelect = screen.getAllByRole("button", { name: "Use" });
+    const inventoryUseButton = useButtonsAfterSelect.find((button) => !button.hasAttribute("disabled"));
+    expect(inventoryUseButton).toBeDefined();
+    fireEvent.click(inventoryUseButton!);
+
+    const enabledUseButtons = screen.getAllByRole("button", { name: "Use" }).filter((button) => !button.hasAttribute("disabled"));
+    fireEvent.click(enabledUseButtons[0]);
+
+    await waitFor(() => {
+      expect(mockSubmitAction).toHaveBeenCalledWith(
+        "session-123",
+        expect.objectContaining({ actionType: "inventory.use", target: "final-lock" })
+      );
+    });
+  });
+
+  it("allows inventory use when usableTargetIds matches hotspot objectId", async () => {
+    useGameStore.setState((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        room: {
+          ...current.state.room,
+          hotspots: [
+            {
+              id: "final-lock-hotspot",
+              objectId: "final-lock",
+              name: "Final Lock",
+              visualKind: "lock",
+              x: 140,
+              y: 40,
+              width: 40,
+              height: 60,
+              color: "#f4b860",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+              targetableModes: ["use"],
+            },
+          ],
+          objectStates: [{ id: "final-lock", visible: true, available: true, locked: false, interactive: true }],
+        },
+        inventory: [
+          {
+            id: "brass-key",
+            label: "Brass Key",
+            quantity: 1,
+            type: "key",
+            stack: false,
+            status: "ready",
+            usableTargetIds: ["final-lock"],
+          },
+        ],
+      },
+    }));
+
+    render(<PlayerPage />);
+    fireEvent.click(screen.getByText("Create Session"));
+    expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Quick Start")[0]);
+
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalled();
+    });
 
     fireEvent.click(screen.getByRole("button", { name: /Brass Key/i }));
     const useButtonsAfterSelect = screen.getAllByRole("button", { name: "Use" });

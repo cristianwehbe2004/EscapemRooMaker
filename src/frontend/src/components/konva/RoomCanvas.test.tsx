@@ -1,33 +1,117 @@
 import React from "react";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import RoomCanvas from "./RoomCanvas";
 import { RoomState } from "../../types/gameState";
 
 jest.mock("react-konva", () => ({
   Stage: ({ children }: { children: React.ReactNode }) => <div data-testid="stage">{children}</div>,
   Layer: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  Group: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  Group: ({
+    children,
+    id,
+    x,
+    y,
+    rotation,
+    opacity,
+  }: {
+    children: React.ReactNode;
+    id?: string;
+    x?: number;
+    y?: number;
+    rotation?: number;
+    opacity?: number;
+  }) => (
+    <div
+      data-testid={id}
+      data-x={x}
+      data-y={y}
+      data-rotation={rotation}
+      data-opacity={opacity}
+    >
+      {children}
+    </div>
+  ),
   Rect: ({
+    id,
+    x,
+    y,
+    width,
+    height,
+    rotation,
+    opacity,
     onClick,
     onDblClick,
     onDblTap,
     onMouseEnter,
     onMouseLeave,
   }: {
+    id?: string;
+    x?: number;
+    y?: number;
+    width?: number;
+    height?: number;
+    rotation?: number;
+    opacity?: number;
     onClick?: () => void;
     onDblClick?: () => void;
     onDblTap?: () => void;
     onMouseEnter?: () => void;
     onMouseLeave?: () => void;
   }) => (
-    <button onClick={onClick} onDoubleClick={() => { onDblClick?.(); onDblTap?.(); }} onMouseEnter={onMouseEnter} onMouseLeave={onMouseLeave}>
+    <button
+      data-testid={id}
+      data-x={x}
+      data-y={y}
+      data-width={width}
+      data-height={height}
+      data-rotation={rotation}
+      data-opacity={opacity}
+      data-clickable={Boolean(onClick)}
+      onClick={onClick}
+      onDoubleClick={() => {
+        onDblClick?.();
+        onDblTap?.();
+      }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
       rect
     </button>
   ),
   Circle: () => <span>circle</span>,
   Line: () => <span>line</span>,
-  Ellipse: ({ onClick, onDblClick, onDblTap }: { onClick?: () => void; onDblClick?: () => void; onDblTap?: () => void }) => (
-    <button onClick={onClick} onDoubleClick={() => { onDblClick?.(); onDblTap?.(); }}>
+  Ellipse: ({
+    id,
+    x,
+    y,
+    radiusX,
+    radiusY,
+    onClick,
+    onDblClick,
+    onDblTap,
+  }: {
+    id?: string;
+    x?: number;
+    y?: number;
+    radiusX?: number;
+    radiusY?: number;
+    onClick?: () => void;
+    onDblClick?: () => void;
+    onDblTap?: () => void;
+  }) => (
+    <button
+      data-testid={id}
+      data-x={x}
+      data-y={y}
+      data-radius-x={radiusX}
+      data-radius-y={radiusY}
+      data-clickable={Boolean(onClick)}
+      onClick={onClick}
+      onDoubleClick={() => {
+        onDblClick?.();
+        onDblTap?.();
+      }}
+    >
       ellipse
     </button>
   ),
@@ -36,6 +120,10 @@ jest.mock("react-konva", () => ({
 }));
 
 describe("RoomCanvas", () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   it("renders room title and triggers inspect/pickup actions", async () => {
     const room: RoomState = {
       roomName: "Test Chamber",
@@ -228,5 +316,236 @@ describe("RoomCanvas", () => {
     expect(onInspect).not.toHaveBeenCalled();
     expect(onPickup).not.toHaveBeenCalled();
     expect(screen.getByText("The room is no longer interactive.")).toBeInTheDocument();
+  });
+
+  it("mounts the clocktower note and lock onto the door hit areas", () => {
+    const room: RoomState = {
+      roomName: "Clocktower Foyer",
+      width: 960,
+      height: 620,
+      backgroundColor: "#0b1220",
+      assets: [],
+      layers: [],
+      hotspots: [
+        {
+          id: "final-door",
+          name: "Final Door",
+          x: 714,
+          y: 150,
+          width: 146,
+          height: 300,
+          color: "#7a4a2a",
+          available: true,
+          visible: true,
+          locked: true,
+          interactive: true,
+          visualKind: "door",
+        },
+        {
+          id: "door-note",
+          name: "Door Note",
+          x: 10,
+          y: 20,
+          width: 22,
+          height: 18,
+          color: "#fde047",
+          available: true,
+          visible: true,
+          locked: false,
+          interactive: true,
+          visualKind: "note",
+        },
+        {
+          id: "final-lock",
+          name: "Final Lock",
+          x: 40,
+          y: 40,
+          width: 20,
+          height: 20,
+          color: "#f4b860",
+          available: true,
+          visible: true,
+          locked: true,
+          interactive: true,
+          visualKind: "lock",
+          targetableModes: ["use"],
+        },
+      ],
+      objectStates: [
+        { id: "final-door", visible: true, available: true, locked: true, interactive: true },
+        { id: "door-note", visible: true, available: true, locked: false, interactive: true },
+        { id: "final-lock", visible: true, available: true, locked: true, interactive: true },
+      ],
+    };
+
+    render(<RoomCanvas room={room} onInspect={jest.fn()} onPickup={jest.fn()} />);
+
+    const noteHit = screen.getByTestId("hotspot-hit-door-note");
+    const lockHit = screen.getByTestId("hotspot-hit-final-lock");
+
+    expect(noteHit).toHaveAttribute("data-x", "747.58");
+    expect(noteHit).toHaveAttribute("data-y", "198");
+    expect(lockHit).toHaveAttribute("data-x", "789.92");
+    expect(lockHit).toHaveAttribute("data-y", "297");
+  });
+
+  it("keeps the attached lock clickable in use mode and routes the lock target", async () => {
+    const room: RoomState = {
+      roomName: "Clocktower Foyer",
+      width: 960,
+      height: 620,
+      backgroundColor: "#0b1220",
+      assets: [],
+      layers: [],
+      hotspots: [
+        {
+          id: "final-door",
+          name: "Final Door",
+          x: 714,
+          y: 150,
+          width: 146,
+          height: 300,
+          color: "#7a4a2a",
+          available: true,
+          visible: true,
+          locked: true,
+          interactive: true,
+          visualKind: "door",
+        },
+        {
+          id: "final-lock",
+          name: "Final Lock",
+          x: 790,
+          y: 296,
+          width: 56,
+          height: 76,
+          color: "#f4b860",
+          available: true,
+          visible: true,
+          locked: true,
+          interactive: true,
+          visualKind: "lock",
+          targetableModes: ["use"],
+          targetableItemIds: ["brass-key"],
+        },
+      ],
+      objectStates: [
+        { id: "final-door", visible: true, available: true, locked: true, interactive: true },
+        { id: "final-lock", visible: true, available: true, locked: true, interactive: true },
+      ],
+    };
+
+    const onInspect = jest.fn();
+    render(
+      <RoomCanvas
+        room={room}
+        onInspect={onInspect}
+        onPickup={jest.fn()}
+        interactionMode="use"
+        selectedInventoryItemId="brass-key"
+        selectedInventoryItem={{
+          id: "brass-key",
+          label: "Brass Key",
+          quantity: 1,
+          type: "key",
+          stack: false,
+          status: "ready",
+          usableTargetIds: ["final-lock"],
+        }}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("hotspot-hit-final-lock"));
+    await new Promise((resolve) => window.setTimeout(resolve, 220));
+
+    expect(onInspect).toHaveBeenCalledWith("final-lock");
+  });
+
+  it("plays the attached lock opening animation before removing it", () => {
+    jest.useFakeTimers();
+
+    const room: RoomState = {
+      roomName: "Clocktower Foyer",
+      width: 960,
+      height: 620,
+      backgroundColor: "#0b1220",
+      assets: [],
+      layers: [],
+      hotspots: [
+        {
+          id: "final-door",
+          name: "Final Door",
+          x: 714,
+          y: 150,
+          width: 146,
+          height: 300,
+          color: "#7a4a2a",
+          available: true,
+          visible: true,
+          locked: true,
+          interactive: true,
+          visualKind: "door",
+        },
+        {
+          id: "final-lock",
+          name: "Final Lock",
+          x: 790,
+          y: 296,
+          width: 56,
+          height: 76,
+          color: "#f4b860",
+          available: true,
+          visible: true,
+          locked: true,
+          interactive: true,
+          visualKind: "lock",
+        },
+      ],
+      objectStates: [
+        { id: "final-door", visible: true, available: true, locked: true, interactive: true },
+        { id: "final-lock", visible: true, available: true, locked: true, interactive: true },
+      ],
+    };
+
+    const { rerender } = render(<RoomCanvas room={room} onInspect={jest.fn()} onPickup={jest.fn()} />);
+
+    rerender(
+      <RoomCanvas
+        room={{
+          ...room,
+          hotspots: [
+            room.hotspots[0],
+            {
+              ...room.hotspots[1],
+              locked: false,
+              visible: false,
+              available: false,
+              interactive: false,
+            },
+          ],
+          objectStates: [
+            room.objectStates[0],
+            { id: "final-lock", visible: false, available: false, locked: false, interactive: false },
+          ],
+        }}
+        onInspect={jest.fn()}
+        onPickup={jest.fn()}
+      />
+    );
+
+    expect(screen.getByTestId("hotspot-animation-final-lock")).toBeInTheDocument();
+
+    act(() => {
+      jest.advanceTimersByTime(360);
+    });
+    const animationNode = screen.getByTestId("hotspot-animation-final-lock");
+    expect(Number(animationNode.getAttribute("data-rotation"))).toBeGreaterThan(0);
+    expect(Number(animationNode.getAttribute("data-opacity"))).toBeLessThan(1);
+
+    act(() => {
+      jest.advanceTimersByTime(400);
+    });
+    expect(screen.queryByTestId("hotspot-animation-final-lock")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("hotspot-hit-final-lock")).not.toBeInTheDocument();
   });
 });

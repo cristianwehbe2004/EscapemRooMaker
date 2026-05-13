@@ -30,6 +30,36 @@ public class PlayerSessionServiceTests
     }
 
     [Fact]
+    public async Task CreateSessionAsync_ShouldUseEstimatedMinutesFromRoomMetadata()
+    {
+        var context = await CreateContextWithPublishedRoomAsync("""
+            {
+              "room": {
+                "roomName": "Clocktower Foyer"
+              },
+              "triggerGraph": {
+                "metadata": {
+                  "estimatedMinutes": "3"
+                },
+                "nodes": [],
+                "edges": []
+              }
+            }
+            """);
+        var store = BuildStateStore();
+        var service = new PlayerSessionService(context, store.Object);
+
+        var summary = await service.CreateSessionAsync(
+            new CreateSessionRequest { DisplayName = "Host" },
+            new PlayerIdentity { ActorId = "host-3", DisplayName = "Host", IsAuthenticated = false });
+
+        summary.DurationMinutes.Should().Be(3);
+        summary.RemainingSeconds.Should().Be(180);
+        var session = await context.Sessions.SingleAsync(x => x.Id == summary.SessionId);
+        session.DurationMinutes.Should().Be(3);
+    }
+
+    [Fact]
     public async Task JoinSessionAsync_ShouldSetSpectatorForNonHostWhenSessionIsAlreadyActive()
     {
         var context = await CreateContextWithPublishedRoomAsync();
@@ -68,7 +98,7 @@ public class PlayerSessionServiceTests
         return store;
     }
 
-    private static async Task<AppDbContext> CreateContextWithPublishedRoomAsync()
+    private static async Task<AppDbContext> CreateContextWithPublishedRoomAsync(string graphDefinition = "{}")
     {
         var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase($"player-session-service-{Guid.NewGuid()}")
@@ -82,7 +112,7 @@ public class PlayerSessionServiceTests
             Description = "seed",
             CreatedByUserId = Guid.NewGuid(),
             IsPublished = true,
-            GraphDefinition = "{}",
+            GraphDefinition = graphDefinition,
             CreatedAtUtc = DateTime.UtcNow
         });
         await context.SaveChangesAsync();

@@ -15,7 +15,7 @@ import { InventoryItem, RoomHotspot } from "../types/gameState";
 
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
 const guestActorStorageKey = "escape-room.guestActorId";
-const fixedSessionMinutes = 10;
+const defaultSessionMinutes = 10;
 
 type PlayerPhase = "home" | "map" | "lobby" | "game";
 type HotspotQuickActionType = "inspect" | "pickup" | "use";
@@ -49,9 +49,11 @@ const formatSeconds = (seconds: number): string => {
   return `${minutes}:${remainingSeconds.toString().padStart(2, "0")}`;
 };
 
-const classifyHotspotKind = (hotspot: RoomHotspot): "note" | "drawer" | "key" | "door" | "lock" | "generic" => {
+const getDoorActionLabel = (hotspot: RoomHotspot): "Inspect" | "Open" => (hotspot.locked ? "Inspect" : "Open");
+
+const classifyHotspotKind = (hotspot: RoomHotspot): "note" | "drawer" | "key" | "door" | "lock" | "switch" | "generic" => {
   const explicit = hotspot.visualKind?.toLowerCase();
-  if (explicit === "note" || explicit === "drawer" || explicit === "key" || explicit === "door" || explicit === "lock") {
+  if (explicit === "note" || explicit === "drawer" || explicit === "key" || explicit === "door" || explicit === "lock" || explicit === "switch") {
     return explicit;
   }
 
@@ -61,7 +63,35 @@ const classifyHotspotKind = (hotspot: RoomHotspot): "note" | "drawer" | "key" | 
   if (value.includes("key")) return "key";
   if (value.includes("door") || value.includes("gate")) return "door";
   if (value.includes("lock")) return "lock";
+  if (value.includes("switch") || value.includes("lever")) return "switch";
   return "generic";
+};
+
+const isPickupPreferredHotspot = (hotspot: RoomHotspot): boolean => {
+  const kind = classifyHotspotKind(hotspot);
+  if (kind === "key" || kind === "switch") {
+    return true;
+  }
+
+  const value = `${hotspot.id} ${hotspot.name} ${hotspot.variant ?? ""}`.toLowerCase();
+  return value.includes("flask") || value.includes("handle") || value.includes("cache");
+};
+
+const shouldShowHotspotInUi = (hotspot: RoomHotspot): boolean => {
+  if (!hotspot.visible) {
+    return false;
+  }
+
+  const kind = classifyHotspotKind(hotspot);
+  if (hotspot.id === "door-note" && !hotspot.available) {
+    return false;
+  }
+
+  if ((kind === "note" || isPickupPreferredHotspot(hotspot)) && !hotspot.available) {
+    return false;
+  }
+
+  return true;
 };
 
 const canUseHotspotWithItem = (hotspot: RoomHotspot, selectedItem: InventoryItem | null): boolean => {
@@ -78,7 +108,8 @@ const canUseHotspotWithItem = (hotspot: RoomHotspot, selectedItem: InventoryItem
   }
 
   if (selectedItem.usableTargetIds && selectedItem.usableTargetIds.length > 0) {
-    return selectedItem.usableTargetIds.includes(hotspot.id);
+    const candidateIds = [hotspot.id, hotspot.objectId].filter((value): value is string => Boolean(value));
+    return candidateIds.some((id) => selectedItem.usableTargetIds!.includes(id));
   }
 
   return true;
@@ -175,9 +206,10 @@ const PlayerPage: React.FC = () => {
             }
 
             try {
+              const latestLastKnownVersion = useGameStore.getState().lastKnownVersion;
               await runSessionRecovery({
                 sessionId: activeSessionId,
-                lastKnownVersion,
+                lastKnownVersion: latestLastKnownVersion,
                 setSyncState,
                 setReplayedDiffCount,
                 setConnectionError,
@@ -193,7 +225,7 @@ const PlayerPage: React.FC = () => {
           onDisconnected: () => setConnectionStatus({ connected: false }),
         }
       ),
-    [accessToken, applyDiff, applySnapshot, lastKnownVersion, setConnectionStatus, setSyncState, showSyncedToast]
+    [accessToken, applyDiff, applySnapshot, setConnectionStatus, setSyncState, showSyncedToast]
   );
 
   useEffect(() => {
@@ -548,7 +580,8 @@ const PlayerPage: React.FC = () => {
 
       const gate = await runWithCooldown(cooldownKey, async () => {
         setPendingActionLabel(actionLabel);
-        await client.submitAction(sessionId, action);
+        const diff = await client.submitAction(sessionId, action);
+        applyDiff(diff);
         setLastActionLabel(actionLabel);
         options?.afterSuccess?.();
       });
@@ -563,6 +596,16 @@ const PlayerPage: React.FC = () => {
       }
     } catch (error) {
       const parsedError = parseActionError(error, cooldownKey);
+      const currentStatus = useGameStore.getState().state.session?.status;
+      if (
+        parsedError.source === "network" &&
+        currentStatus === "Completed" &&
+        parsedError.message.toLowerCase().includes("underlying connection being closed")
+      ) {
+        setConnectionError(null);
+        setActionError(null);
+        return;
+      }
       setActionError(parsedError);
       if (parsedError.source === "network") {
         setConnectionError(parsedError.message);
@@ -617,7 +660,8 @@ const PlayerPage: React.FC = () => {
 
   const handleInspect = async (targetId: string) => {
     setFocusedTargetId(targetId);
-    const actionTargetId = state.room.hotspots.find((hotspot) => hotspot.id === targetId)?.objectId ?? targetId;
+    const selectedHotspot = state.room.hotspots.find((hotspot) => hotspot.id === targetId);
+    const actionTargetId = selectedHotspot?.objectId ?? targetId;
     if (inventoryInteractionMode === "use" && selectedInventoryItemId) {
       const selectedItem = selectedInventoryItem;
       if (selectedItem?.status !== "ready") {
@@ -631,7 +675,8 @@ const PlayerPage: React.FC = () => {
       if (
         selectedItem?.usableTargetIds &&
         selectedItem.usableTargetIds.length > 0 &&
-        !selectedItem.usableTargetIds.includes(targetId)
+        !selectedItem.usableTargetIds.includes(targetId) &&
+        !selectedItem.usableTargetIds.includes(actionTargetId)
       ) {
         setActionError({
           source: "local-cooldown",
@@ -656,7 +701,8 @@ const PlayerPage: React.FC = () => {
 
   const handlePickup = async (targetId: string) => {
     setFocusedTargetId(targetId);
-    const actionTargetId = state.room.hotspots.find((hotspot) => hotspot.id === targetId)?.objectId ?? targetId;
+    const selectedHotspot = state.room.hotspots.find((hotspot) => hotspot.id === targetId);
+    const actionTargetId = selectedHotspot?.objectId ?? selectedHotspot?.id ?? targetId;
     await submitAction("pickup", actionTargetId);
   };
 
@@ -692,11 +738,12 @@ const PlayerPage: React.FC = () => {
 
   const sessionState = state.session;
   const status = sessionState?.status ?? playerSession?.status ?? "Not Started";
+  const sessionDurationMinutes = sessionState?.durationMinutes ?? playerSession?.durationMinutes ?? defaultSessionMinutes;
   const endsAtUtc = sessionState?.endsAtUtc ?? playerSession?.endsAtUtc;
   const remainingSeconds = useMemo(() => {
     void timerTick;
     if (status !== "Active") {
-      return sessionState?.remainingSeconds ?? playerSession?.remainingSeconds ?? fixedSessionMinutes * 60;
+      return sessionState?.remainingSeconds ?? playerSession?.remainingSeconds ?? sessionDurationMinutes * 60;
     }
 
     if (!endsAtUtc) {
@@ -704,25 +751,35 @@ const PlayerPage: React.FC = () => {
     }
 
     return Math.max(0, Math.ceil((new Date(endsAtUtc).getTime() - Date.now()) / 1000));
-  }, [endsAtUtc, playerSession?.remainingSeconds, sessionState?.remainingSeconds, status, timerTick]);
+  }, [endsAtUtc, playerSession?.remainingSeconds, sessionDurationMinutes, sessionState?.remainingSeconds, status, timerTick]);
   const isGameOver = status === "Completed" || status === "Expired" || status === "Cancelled";
   const quickActionsByHotspotId = useMemo(() => {
     const actionsById = new Map<string, HotspotQuickAction[]>();
     for (const hotspot of state.room.hotspots) {
-      const canInteract = hotspot.available && hotspot.interactive && !hotspot.locked && canSubmitActions && !isGameOver;
+      const canInteract = hotspot.available && hotspot.interactive && canSubmitActions && !isGameOver;
       const kind = classifyHotspotKind(hotspot);
       const actions: HotspotQuickAction[] = [];
 
-      if (kind === "key") {
-        actions.push({ key: `${hotspot.id}-pickup`, label: "Pickup", actionType: "pickup", disabled: !canInteract });
+      if (kind === "key" || kind === "switch" || isPickupPreferredHotspot(hotspot)) {
+        actions.push({ key: `${hotspot.id}-pickup`, label: "Pickup", actionType: "pickup", disabled: !canInteract || hotspot.locked });
       } else if (kind === "drawer") {
         actions.push({ key: `${hotspot.id}-open`, label: "Open", actionType: "inspect", disabled: !canInteract });
       } else if (kind === "note") {
         actions.push({ key: `${hotspot.id}-inspect`, label: "Inspect", actionType: "inspect", disabled: !canInteract });
+        actions.push({ key: `${hotspot.id}-pickup`, label: "Pickup", actionType: "pickup", disabled: !canInteract || hotspot.locked });
       } else if (kind === "door" || kind === "lock") {
-        const canUse = canInteract && inventoryInteractionMode === "use" && canUseHotspotWithItem(hotspot, selectedInventoryItem);
-        actions.push({ key: `${hotspot.id}-use`, label: "Use", actionType: "use", disabled: !canUse });
-        actions.push({ key: `${hotspot.id}-inspect`, label: "Inspect", actionType: "inspect", disabled: !canInteract });
+        if (kind === "door" && !hotspot.locked) {
+          actions.push({ key: `${hotspot.id}-open`, label: getDoorActionLabel(hotspot), actionType: "inspect", disabled: !canInteract });
+        } else {
+          const canUse = canInteract && inventoryInteractionMode === "use" && canUseHotspotWithItem(hotspot, selectedInventoryItem);
+          actions.push({ key: `${hotspot.id}-use`, label: "Use", actionType: "use", disabled: !canUse });
+          actions.push({
+            key: `${hotspot.id}-inspect`,
+            label: kind === "door" ? getDoorActionLabel(hotspot) : "Inspect",
+            actionType: "inspect",
+            disabled: !canInteract,
+          });
+        }
       } else {
         actions.push({ key: `${hotspot.id}-inspect`, label: "Inspect", actionType: "inspect", disabled: !canInteract });
       }
@@ -740,18 +797,15 @@ const PlayerPage: React.FC = () => {
 
     clearInventoryIntent();
     setInventoryInteractionMode("none");
-    if (connected) {
-      void client.stop().then(() => setConnectionStatus({ connected: false }));
-    }
-  }, [clearInventoryIntent, client, connected, setConnectionStatus, status]);
+  }, [clearInventoryIntent, status]);
 
   const renderHero = () => (
     <section className="grid gap-5 rounded-3xl border border-sky-500/30 bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 p-6 shadow-[0_0_40px_rgba(14,165,233,0.18)] lg:grid-cols-[1.2fr_0.8fr]">
       <div>
         <p className="text-xs uppercase tracking-[0.22em] text-sky-300">EscapeRoom Live</p>
-        <h1 className="mt-3 text-4xl font-semibold leading-tight text-slate-50">Choose a room. Beat it in 10 minutes.</h1>
+        <h1 className="mt-3 text-4xl font-semibold leading-tight text-slate-50">Choose a room. Beat the clock.</h1>
         <p className="mt-3 max-w-xl text-sm text-slate-300">
-          Create a solo or hosted session from two curated maps. Inventory interactions, lock logic, and realtime spectating are fully server-authoritative.
+          Create a solo or hosted session from curated maps with room-specific timers, inventory interactions, and server-authoritative puzzle logic.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <button onClick={() => void openMapMenu()} className="rounded-xl bg-sky-500 px-5 py-3 text-sm font-semibold text-slate-950">
@@ -801,7 +855,7 @@ const PlayerPage: React.FC = () => {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-2xl font-semibold">Choose Your Map</h2>
-          <p className="text-sm text-slate-300">All player sessions are fixed to {fixedSessionMinutes} minutes.</p>
+          <p className="text-sm text-slate-300">Each room uses its own timer and puzzle flow.</p>
         </div>
         <button onClick={() => void loadFeaturedRooms()} className="rounded border border-slate-500 px-3 py-2 text-sm text-slate-200">
           Refresh Rooms
@@ -831,7 +885,7 @@ const PlayerPage: React.FC = () => {
                 <span className={`rounded-full px-2 py-1 text-xs uppercase tracking-wider ${chipClass}`}>{difficulty}</span>
               </div>
               <p className="mt-2 text-sm text-slate-300">{room.description || "No description."}</p>
-              <p className="mt-2 text-xs text-slate-400">Estimated {room.estimatedMinutes ?? fixedSessionMinutes} min</p>
+              <p className="mt-2 text-xs text-slate-400">Estimated {room.estimatedMinutes ?? defaultSessionMinutes} min</p>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   onClick={() => {
@@ -957,7 +1011,7 @@ const PlayerPage: React.FC = () => {
               <p className="text-sm text-slate-300">Hotspot actions (fallback controls)</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {state.room.hotspots
-                  .filter((hotspot) => hotspot.visible)
+                  .filter((hotspot) => shouldShowHotspotInUi(hotspot))
                   .map((hotspot) => {
                     const actions = quickActionsByHotspotId.get(hotspot.id) ?? [];
                     return (

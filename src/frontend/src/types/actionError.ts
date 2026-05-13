@@ -113,7 +113,13 @@ export const parseActionError = (error: unknown, actionKey?: string): ActionErro
     };
   }
 
-  if (normalized.includes("network") || normalized.includes("connection") || normalized.includes("timeout")) {
+  if (
+    normalized.includes("network") ||
+    normalized.includes("connection") ||
+    normalized.includes("timeout") ||
+    normalized.includes("invocation canceled") ||
+    normalized.includes("underlying connection being closed")
+  ) {
     return {
       source: "network",
       message: messageField,

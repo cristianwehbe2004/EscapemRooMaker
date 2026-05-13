@@ -1,4 +1,4 @@
-import { HubConnection, HubConnectionBuilder, LogLevel } from "@microsoft/signalr";
+import { HubConnection, HubConnectionBuilder, HubConnectionState, LogLevel } from "@microsoft/signalr";
 import {
   GmControlAction,
   GmHintAction,
@@ -143,8 +143,38 @@ export class GameRealtimeClient {
   }
 
   private async ensureStarted(): Promise<void> {
-    if (this.connection.state === "Disconnected") {
+    if (this.connection.state === HubConnectionState.Disconnected) {
       await this.connection.start();
+      return;
     }
+
+    if (this.connection.state === HubConnectionState.Connected) {
+      return;
+    }
+
+    if (this.connection.state === HubConnectionState.Connecting || this.connection.state === HubConnectionState.Reconnecting) {
+      await this.waitUntilConnected();
+      return;
+    }
+
+    throw new Error("Realtime connection is currently closing.");
+  }
+
+  private async waitUntilConnected(timeoutMs = 8000): Promise<void> {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < timeoutMs) {
+      if (this.connection.state === HubConnectionState.Connected) {
+        return;
+      }
+
+      if (this.connection.state === HubConnectionState.Disconnected) {
+        await this.connection.start();
+        return;
+      }
+
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 100));
+    }
+
+    throw new Error("Realtime connection timed out while recovering.");
   }
 }

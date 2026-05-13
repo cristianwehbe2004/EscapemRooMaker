@@ -9,6 +9,9 @@ namespace EscapeRoom.Infrastructure.Rooms;
 
 public class LibraryService(AppDbContext dbContext) : ILibraryService
 {
+    private const string ClocktowerRoomName = "Clocktower Foyer";
+    private const int ClocktowerEstimatedMinutes = 3;
+
     public async Task<LibraryRoomsResponse> GetPublishedRoomsAsync(
         string? query,
         string? sort,
@@ -70,6 +73,9 @@ public class LibraryService(AppDbContext dbContext) : ILibraryService
         var projected = rooms.Select(room =>
         {
             var metadata = ResolveRoomMetadata(room.GraphDefinition);
+            var estimatedMinutes = string.Equals(room.Name, ClocktowerRoomName, StringComparison.OrdinalIgnoreCase)
+                ? ClocktowerEstimatedMinutes
+                : metadata.EstimatedMinutes;
             var aggregate = ratingAggregate.GetValueOrDefault(room.Id);
             return new LibraryRoomListItemDto
             {
@@ -82,7 +88,7 @@ public class LibraryService(AppDbContext dbContext) : ILibraryService
                 ViewerRating = viewerRatings.TryGetValue(room.Id, out var score) ? score : null,
                 IsFeatured = metadata.IsFeatured,
                 Difficulty = metadata.Difficulty,
-                EstimatedMinutes = metadata.EstimatedMinutes
+                EstimatedMinutes = estimatedMinutes
             };
         });
 

@@ -224,6 +224,44 @@ describe("gameStore", () => {
     });
   });
 
+  it("normalizes inventory entries with PascalCase keys from backend payloads", () => {
+    const snapshot: SessionSnapshotEnvelope = {
+      sessionId: "session-pascal-inventory",
+      sessionVersion: 7,
+      stateJson: JSON.stringify({
+        room: initialGameData.room,
+        inventory: [
+          {
+            Id: "brass-key",
+            Label: "Brass Key",
+            Quantity: 1,
+            Type: "key",
+            Stack: false,
+            Status: "ready",
+            UsableTargetIds: ["final-lock"],
+          },
+        ],
+      }),
+      serverTimeUtc: new Date().toISOString(),
+    };
+
+    useGameStore.getState().applySnapshot(snapshot);
+    const state = useGameStore.getState();
+
+    expect(state.state.inventory).toEqual([
+      {
+        id: "brass-key",
+        label: "Brass Key",
+        quantity: 1,
+        type: "key",
+        stack: false,
+        status: "ready",
+        usableTargetIds: ["final-lock"],
+        combinableWithIds: undefined,
+      },
+    ]);
+  });
+
   it("keeps seeded door note and drawer visible when snapshot includes matching object states", () => {
     const snapshot: SessionSnapshotEnvelope = {
       sessionId: "session-clocktower",

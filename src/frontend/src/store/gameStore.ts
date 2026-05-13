@@ -96,19 +96,23 @@ const toInventoryItem = (value: unknown, index: number): InventoryItem | null =>
   }
 
   const record = value as Record<string, unknown>;
-  const label = asString(record.label) ?? asString(record.name);
+  const label =
+    asString(getRecordValue(record, "label")) ??
+    asString(getRecordValue(record, "name"));
   if (!label) {
     return null;
   }
 
-  const quantityRaw = typeof record.quantity === "number" ? record.quantity : Number(record.quantity);
+  const quantityValue = getRecordValue(record, "quantity");
+  const quantityRaw = typeof quantityValue === "number" ? quantityValue : Number(quantityValue);
   const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
-  const explicitId = asString(record.id);
-  const type = asString(record.type) ?? "generic";
-  const stack = typeof record.stack === "boolean" ? record.stack : quantity > 1;
-  const status = asString(record.status) ?? "ready";
-  const usableTargetIds = asStringArray(record.usableTargetIds);
-  const combinableWithIds = asStringArray(record.combinableWithIds);
+  const explicitId = asString(getRecordValue(record, "id"));
+  const type = asString(getRecordValue(record, "type")) ?? "generic";
+  const stackValue = getRecordValue(record, "stack");
+  const stack = typeof stackValue === "boolean" ? stackValue : quantity > 1;
+  const status = asString(getRecordValue(record, "status")) ?? "ready";
+  const usableTargetIds = asStringArray(getRecordValue(record, "usableTargetIds"));
+  const combinableWithIds = asStringArray(getRecordValue(record, "combinableWithIds"));
 
   return {
     id: explicitId ?? `inv-${index}-${label.toLowerCase().replace(/\s+/g, "-")}`,
@@ -135,31 +139,34 @@ const normalizeInventory = (value: unknown): InventoryItem[] => {
 };
 
 const toHotspot = (value: Record<string, unknown>, defaults?: RoomHotspot): RoomHotspot | null => {
-  const id = asString(value.id) ?? defaults?.id;
+  const id = asString(getRecordValue(value, "id")) ?? defaults?.id;
   if (!id) {
     return null;
   }
 
   return {
     id,
-    name: asString(value.name) ?? defaults?.name ?? id,
-    visualKind: asString(value.visualKind) ?? defaults?.visualKind,
-    variant: asString(value.variant) ?? defaults?.variant,
-    x: typeof value.x === "number" ? value.x : defaults?.x ?? 0,
-    y: typeof value.y === "number" ? value.y : defaults?.y ?? 0,
-    width: typeof value.width === "number" ? value.width : defaults?.width ?? 80,
-    height: typeof value.height === "number" ? value.height : defaults?.height ?? 40,
-    color: asString(value.color) ?? defaults?.color ?? "#94a3b8",
-    available: typeof value.available === "boolean" ? value.available : defaults?.available ?? true,
-    visible: typeof value.visible === "boolean" ? value.visible : defaults?.visible ?? true,
-    locked: typeof value.locked === "boolean" ? value.locked : defaults?.locked ?? false,
-    interactive: typeof value.interactive === "boolean" ? value.interactive : defaults?.interactive ?? true,
-    hitArea: value.hitArea === "ellipse" ? "ellipse" : defaults?.hitArea ?? "rect",
-    layerId: asString(value.layerId) ?? defaults?.layerId,
-    objectId: asString(value.objectId) ?? defaults?.objectId,
-    targetableItemIds: asStringArray(value.targetableItemIds) ?? defaults?.targetableItemIds,
-    targetableModes: Array.isArray(value.targetableModes)
-      ? value.targetableModes.filter(
+    name: asString(getRecordValue(value, "name")) ?? defaults?.name ?? id,
+    visualKind: asString(getRecordValue(value, "visualKind")) ?? defaults?.visualKind,
+    variant: asString(getRecordValue(value, "variant")) ?? defaults?.variant,
+    x: typeof getRecordValue(value, "x") === "number" ? (getRecordValue(value, "x") as number) : defaults?.x ?? 0,
+    y: typeof getRecordValue(value, "y") === "number" ? (getRecordValue(value, "y") as number) : defaults?.y ?? 0,
+    width: typeof getRecordValue(value, "width") === "number" ? (getRecordValue(value, "width") as number) : defaults?.width ?? 80,
+    height: typeof getRecordValue(value, "height") === "number" ? (getRecordValue(value, "height") as number) : defaults?.height ?? 40,
+    color: asString(getRecordValue(value, "color")) ?? defaults?.color ?? "#94a3b8",
+    available: typeof getRecordValue(value, "available") === "boolean" ? (getRecordValue(value, "available") as boolean) : defaults?.available ?? true,
+    visible: typeof getRecordValue(value, "visible") === "boolean" ? (getRecordValue(value, "visible") as boolean) : defaults?.visible ?? true,
+    locked: typeof getRecordValue(value, "locked") === "boolean" ? (getRecordValue(value, "locked") as boolean) : defaults?.locked ?? false,
+    interactive:
+      typeof getRecordValue(value, "interactive") === "boolean"
+        ? (getRecordValue(value, "interactive") as boolean)
+        : defaults?.interactive ?? true,
+    hitArea: getRecordValue(value, "hitArea") === "ellipse" ? "ellipse" : defaults?.hitArea ?? "rect",
+    layerId: asString(getRecordValue(value, "layerId")) ?? defaults?.layerId,
+    objectId: asString(getRecordValue(value, "objectId")) ?? defaults?.objectId,
+    targetableItemIds: asStringArray(getRecordValue(value, "targetableItemIds")) ?? defaults?.targetableItemIds,
+    targetableModes: Array.isArray(getRecordValue(value, "targetableModes"))
+      ? (getRecordValue(value, "targetableModes") as unknown[]).filter(
           (entry): entry is "use" | "combine" | "inspect" | "pickup" =>
             entry === "use" || entry === "combine" || entry === "inspect" || entry === "pickup"
         )
@@ -222,17 +229,21 @@ const toAsset = (value: Record<string, unknown>, defaults?: RoomAsset): RoomAsse
 };
 
 const toObjectState = (value: Record<string, unknown>, defaults?: RoomObjectState): RoomObjectState | null => {
-  const id = asString(value.id) ?? defaults?.id;
+  const id = asString(getRecordValue(value, "id")) ?? defaults?.id;
   if (!id) {
     return null;
   }
 
   return {
     id,
-    visible: typeof value.visible === "boolean" ? value.visible : defaults?.visible ?? true,
-    available: typeof value.available === "boolean" ? value.available : defaults?.available ?? true,
-    locked: typeof value.locked === "boolean" ? value.locked : defaults?.locked ?? false,
-    interactive: typeof value.interactive === "boolean" ? value.interactive : defaults?.interactive ?? true,
+    visible: typeof getRecordValue(value, "visible") === "boolean" ? (getRecordValue(value, "visible") as boolean) : defaults?.visible ?? true,
+    available:
+      typeof getRecordValue(value, "available") === "boolean" ? (getRecordValue(value, "available") as boolean) : defaults?.available ?? true,
+    locked: typeof getRecordValue(value, "locked") === "boolean" ? (getRecordValue(value, "locked") as boolean) : defaults?.locked ?? false,
+    interactive:
+      typeof getRecordValue(value, "interactive") === "boolean"
+        ? (getRecordValue(value, "interactive") as boolean)
+        : defaults?.interactive ?? true,
   };
 };
 
@@ -407,8 +418,7 @@ const applyRoomPatch = (
 
   const objectStateById = new Map(next.objectStates.map((entry) => [entry.id, entry]));
   next.hotspots = next.hotspots.map((hotspot) => {
-    const objectId = hotspot.objectId ?? hotspot.id;
-    const state = objectStateById.get(objectId);
+    const state = objectStateById.get(hotspot.objectId ?? hotspot.id) ?? objectStateById.get(hotspot.id);
     if (!state) {
       return hotspot;
     }

@@ -7,6 +7,7 @@ using EscapeRoom.Application.Triggering;
 using EscapeRoom.Domain.Entities;
 using EscapeRoom.Domain.Enums;
 using EscapeRoom.Infrastructure.Data;
+using EscapeRoom.Infrastructure.Rooms;
 using Microsoft.EntityFrameworkCore;
 
 namespace EscapeRoom.Infrastructure.Sessions;
@@ -16,6 +17,8 @@ public class PlayerSessionService(
     ISessionStateStore sessionStateStore) : IPlayerSessionService
 {
     private const int ForcedDurationMinutes = 10;
+    private const string ClocktowerRoomName = "Clocktower Foyer";
+    private const int ClocktowerDurationMinutes = 3;
     private const string JoinModePlayer = "player";
     private const string JoinModeSpectator = "spectator";
 
@@ -26,13 +29,14 @@ public class PlayerSessionService(
     {
         var room = await ResolvePublishedRoomAsync(request.RoomId, cancellationToken);
         var now = DateTime.UtcNow;
+        var durationMinutes = ResolveDurationMinutes(room);
         var session = new GameSession
         {
             RoomId = room.Id,
             Status = SessionStatus.Pending,
             StartedAtUtc = now,
             LastActivityAtUtc = now,
-            DurationMinutes = ForcedDurationMinutes,
+            DurationMinutes = durationMinutes,
             HostActorId = identity.ActorId,
             IsQuickPlay = false
         };
@@ -52,14 +56,15 @@ public class PlayerSessionService(
     {
         var room = await ResolvePublishedRoomAsync(request.RoomId, cancellationToken);
         var now = DateTime.UtcNow;
+        var durationMinutes = ResolveDurationMinutes(room);
         var session = new GameSession
         {
             RoomId = room.Id,
             Status = SessionStatus.Active,
             StartedAtUtc = now,
             LastActivityAtUtc = now,
-            DurationMinutes = ForcedDurationMinutes,
-            EndsAtUtc = now.AddMinutes(ForcedDurationMinutes),
+            DurationMinutes = durationMinutes,
+            EndsAtUtc = now.AddMinutes(durationMinutes),
             HostActorId = identity.ActorId,
             IsQuickPlay = true
         };
@@ -166,6 +171,31 @@ public class PlayerSessionService(
         }
 
         return session.Status != SessionStatus.Active;
+    }
+
+    private static int ResolveDurationMinutes(Room room)
+    {
+        if (string.Equals(room.Name, ClocktowerRoomName, StringComparison.OrdinalIgnoreCase))
+        {
+            return ClocktowerDurationMinutes;
+        }
+
+        try
+        {
+            var document = EditorDocumentMapper.Deserialize(room.GraphDefinition);
+            if (document.TriggerGraph.Metadata.TryGetValue("estimatedMinutes", out var estimatedValue) &&
+                int.TryParse(estimatedValue, out var estimatedMinutes) &&
+                estimatedMinutes > 0)
+            {
+                return estimatedMinutes;
+            }
+        }
+        catch
+        {
+            // Fall back to the existing default when room metadata is unavailable.
+        }
+
+        return ForcedDurationMinutes;
     }
 
     private async Task<Room> ResolvePublishedRoomAsync(Guid? roomId, CancellationToken cancellationToken)

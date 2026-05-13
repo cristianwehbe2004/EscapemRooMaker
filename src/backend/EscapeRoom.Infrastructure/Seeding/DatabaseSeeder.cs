@@ -270,7 +270,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                 {
                     ["featured"] = "true",
                     ["difficulty"] = "easy",
-                    ["estimatedMinutes"] = "8",
+                    ["estimatedMinutes"] = "3",
                     ["theme"] = "clocktower foyer"
                 },
                 Nodes =
@@ -592,21 +592,75 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     {
                         NodeId = "use-door-open",
                         Family = "effect",
+                        Type = "setStateValue",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["key"] = "puzzles.clocktower.finalDoorUnlocked",
+                            ["value"] = true
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "use-door-enable-door",
+                        Family = "effect",
                         Type = "setObjectState",
                         Config = new Dictionary<string, object?>
                         {
                             ["objectId"] = "final-door",
                             ["locked"] = false,
+                            ["interactive"] = true,
+                            ["available"] = true
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "open-door-action",
+                        Family = "condition",
+                        Type = "actionTypeEquals",
+                        Config = new Dictionary<string, object?> { ["expectedActionType"] = "inspect" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "open-door-target",
+                        Family = "condition",
+                        Type = "targetEquals",
+                        Config = new Dictionary<string, object?> { ["targetId"] = "final-door" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "open-door-unlocked",
+                        Family = "condition",
+                        Type = "stateValueEquals",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["key"] = "puzzles.clocktower.finalDoorUnlocked",
+                            ["value"] = true
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "open-door-all",
+                        Family = "combinator",
+                        Type = "allTrue"
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "open-door-disable",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "final-door",
                             ["interactive"] = false,
                             ["available"] = false
                         }
                     },
                     new TriggerNodeDefinition
                     {
-                        NodeId = "use-door-complete",
+                        NodeId = "open-door-complete",
                         Family = "effect",
                         Type = "completeSession",
-                        Config = new Dictionary<string, object?> { ["message"] = "The lock clicks, the door swings open, and the room clears." }
+                        Config = new Dictionary<string, object?> { ["message"] = "The door swings open and you escape the clocktower foyer." }
                     }
                 ],
                 Edges =
@@ -647,7 +701,13 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-remove-key" },
                     new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-unlock" },
                     new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-open" },
-                    new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-complete" }
+                    new TriggerEdgeDefinition { FromNodeId = "use-door-all", ToNodeId = "use-door-enable-door" },
+
+                    new TriggerEdgeDefinition { FromNodeId = "open-door-action", ToNodeId = "open-door-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "open-door-target", ToNodeId = "open-door-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "open-door-unlocked", ToNodeId = "open-door-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "open-door-all", ToNodeId = "open-door-disable" },
+                    new TriggerEdgeDefinition { FromNodeId = "open-door-all", ToNodeId = "open-door-complete" }
                 ]
             }
         };
