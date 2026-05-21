@@ -102,4 +102,45 @@ public class LibraryServiceTests
         var response = await service.GetPublishedRoomsAsync(null, "newest", null, 1, 20, null);
         response.Total.Should().Be(0);
     }
+
+    [Fact]
+    public async Task GetPublishedRoomsAsync_ShouldExposeEstimatedMinutesFromRoomMetadata()
+    {
+        var dbOptions = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase($"library-metadata-{Guid.NewGuid()}")
+            .Options;
+
+        await using (var seedContext = new AppDbContext(dbOptions))
+        {
+            seedContext.Rooms.Add(new Room
+            {
+                Id = Guid.NewGuid(),
+                Name = "Crypt of Echoes",
+                Description = "Hard room",
+                IsPublished = true,
+                CreatedByUserId = Guid.NewGuid(),
+                GraphDefinition = """
+                    {
+                      "triggerGraph": {
+                        "metadata": {
+                          "featured": "true",
+                          "difficulty": "hard",
+                          "estimatedMinutes": "5"
+                        }
+                      }
+                    }
+                    """
+            });
+            await seedContext.SaveChangesAsync();
+        }
+
+        await using var context = new AppDbContext(dbOptions);
+        var service = new LibraryService(context);
+
+        var response = await service.GetPublishedRoomsAsync(null, "newest", true, 1, 20, null);
+
+        response.Total.Should().Be(1);
+        response.Items[0].Name.Should().Be("Crypt of Echoes");
+        response.Items[0].EstimatedMinutes.Should().Be(5);
+    }
 }

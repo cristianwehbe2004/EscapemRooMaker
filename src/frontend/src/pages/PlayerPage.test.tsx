@@ -33,7 +33,7 @@ const featuredRoomsResponse = {
       viewerRating: null,
       isFeatured: true,
       difficulty: "hard",
-      estimatedMinutes: 10,
+      estimatedMinutes: 5,
     },
   ],
   page: 1,
@@ -208,6 +208,7 @@ describe("PlayerPage", () => {
 
     expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
     expect(screen.getByText("Crypt of Echoes")).toBeInTheDocument();
+    expect(screen.getByText("Estimated 5 min")).toBeInTheDocument();
 
     const createButtons = screen.getAllByText("Create Lobby");
     fireEvent.click(createButtons[0]);

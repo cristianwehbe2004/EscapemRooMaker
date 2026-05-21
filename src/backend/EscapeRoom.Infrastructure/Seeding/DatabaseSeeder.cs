@@ -836,7 +836,7 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                 {
                     ["featured"] = "true",
                     ["difficulty"] = "hard",
-                    ["estimatedMinutes"] = "10",
+                    ["estimatedMinutes"] = "5",
                     ["theme"] = "crypt puzzle"
                 },
                 Nodes =

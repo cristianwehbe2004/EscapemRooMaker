@@ -27,11 +27,11 @@ This document maps publicly available visual/puzzle references to the two featur
 
 ## Notes
 - References are design inspiration only; room logic and state machine are implemented locally in the trigger graph definitions stored in room `GraphDefinition`.
-- Session time policy is enforced server-side at 10 minutes for all player sessions.
+- Session time policy is enforced server-side per room metadata, with `Crypt of Echoes` set to 5 minutes.
 
 ## Changes Made In This Implementation
 - Stabilized player session APIs with explicit, structured error responses (`404/403/400`) for create/join/start/get failures.
-- Enforced fixed 10-minute duration for player sessions in backend session service logic.
+- Session duration defaults server-side when metadata is absent, while seeded featured rooms can override via `estimatedMinutes`.
 - Added server-side spectator mode for non-host users joining active sessions.
 - Added `joinMode` and `canSubmitActions` to session contracts and propagated them to frontend state/UI.
 - Enforced spectator restrictions in realtime action submission (`GameHub`) so spectators cannot mutate session state.

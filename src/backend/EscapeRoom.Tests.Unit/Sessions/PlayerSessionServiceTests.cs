@@ -60,6 +60,34 @@ public class PlayerSessionServiceTests
     }
 
     [Fact]
+    public async Task QuickStartAsync_ShouldTolerateNumericEstimatedMinutesMetadata()
+    {
+        var context = await CreateContextWithPublishedRoomAsync("""
+            {
+              "room": {
+                "roomName": "Crypt of Echoes"
+              },
+              "triggerGraph": {
+                "metadata": {
+                  "estimatedMinutes": 5
+                },
+                "nodes": [],
+                "edges": []
+              }
+            }
+            """);
+        var store = BuildStateStore();
+        var service = new PlayerSessionService(context, store.Object);
+
+        var summary = await service.QuickStartAsync(
+            new CreateSessionRequest { DisplayName = "Host" },
+            new PlayerIdentity { ActorId = "host-4", DisplayName = "Host", IsAuthenticated = false });
+
+        summary.DurationMinutes.Should().Be(5);
+        summary.RemainingSeconds.Should().Be(300);
+    }
+
+    [Fact]
     public async Task JoinSessionAsync_ShouldSetSpectatorForNonHostWhenSessionIsAlreadyActive()
     {
         var context = await CreateContextWithPublishedRoomAsync();

@@ -55,6 +55,23 @@ EscapemRooMaker is a multiplayer escape-room platform with:
 
 ## Local Run
 
+### Full stack with Docker Compose
+
+```bash
+docker compose up --build
+```
+
+This starts:
+- frontend on `http://localhost:3000`
+- backend API + SignalR hub on `http://localhost:5130`
+- PostgreSQL on `localhost:55432`
+- Redis on `localhost:6379`
+- Azurite Blob Storage on `localhost:10000`
+
+The compose setup also runs EF migrations and seeds baseline data before the backend starts.
+
+### Manual local dev flow
+
 ### 1) Start infrastructure
 
 ```bash
