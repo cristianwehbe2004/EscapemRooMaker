@@ -548,4 +548,93 @@ describe("RoomCanvas", () => {
     expect(screen.queryByTestId("hotspot-animation-final-lock")).not.toBeInTheDocument();
     expect(screen.queryByTestId("hotspot-hit-final-lock")).not.toBeInTheDocument();
   });
+
+  it("treats badge-style hotspots as pickups on primary click", async () => {
+    const room: RoomState = {
+      roomName: "Velvet Vault",
+      width: 500,
+      height: 300,
+      backgroundColor: "#0b1220",
+      assets: [],
+      layers: [],
+      hotspots: [
+        {
+          id: "door-badge",
+          name: "Security Badge",
+          visualKind: "note",
+          variant: "badge",
+          x: 10,
+          y: 10,
+          width: 50,
+          height: 60,
+          color: "#f59e0b",
+          available: true,
+          visible: true,
+          locked: false,
+          interactive: true,
+        },
+      ],
+      objectStates: [{ id: "door-badge", visible: true, available: true, locked: false, interactive: true }],
+    };
+
+    const onInspect = jest.fn();
+    const onPickup = jest.fn();
+    render(<RoomCanvas room={room} onInspect={onInspect} onPickup={onPickup} />);
+
+    fireEvent.click(screen.getByTestId("hotspot-hit-door-badge"));
+    await new Promise((resolve) => window.setTimeout(resolve, 220));
+
+    expect(onPickup).toHaveBeenCalledWith("door-badge");
+    expect(onInspect).not.toHaveBeenCalled();
+  });
+
+  it("treats reader-style hotspots as inspect targets so use mode can submit them", async () => {
+    const room: RoomState = {
+      roomName: "Velvet Vault",
+      width: 500,
+      height: 300,
+      backgroundColor: "#0b1220",
+      assets: [],
+      layers: [],
+      hotspots: [
+        {
+          id: "final-reader",
+          name: "Exit Reader",
+          visualKind: "switch",
+          variant: "reader",
+          x: 10,
+          y: 10,
+          width: 50,
+          height: 80,
+          color: "#f59e0b",
+          available: true,
+          visible: true,
+          locked: false,
+          interactive: true,
+          targetableModes: ["use"],
+          targetableItemIds: ["exit-keycard"],
+        },
+      ],
+      objectStates: [{ id: "final-reader", visible: true, available: true, locked: false, interactive: true }],
+    };
+
+    const onInspect = jest.fn();
+    const onPickup = jest.fn();
+    render(
+      <RoomCanvas
+        room={room}
+        onInspect={onInspect}
+        onPickup={onPickup}
+        selectedInventoryItemId="exit-keycard"
+        selectedInventoryItem={{ id: "exit-keycard", label: "Ivory Keycard", quantity: 1, type: "keycard", stack: false, status: "ready" }}
+        interactionMode="use"
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("hotspot-hit-final-reader"));
+    await new Promise((resolve) => window.setTimeout(resolve, 220));
+
+    expect(onInspect).toHaveBeenCalledWith("final-reader");
+    expect(onPickup).not.toHaveBeenCalled();
+  });
 });

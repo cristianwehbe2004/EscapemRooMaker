@@ -385,6 +385,10 @@ const applyRoomPatch = (
     return current;
   }
 
+  if ((roomPatch as Record<string, unknown>).replace === true) {
+    return normalizeRoomState(roomPatch, current);
+  }
+
   const next: RoomState = {
     ...current,
     roomName: roomPatch.roomName ?? current.roomName,

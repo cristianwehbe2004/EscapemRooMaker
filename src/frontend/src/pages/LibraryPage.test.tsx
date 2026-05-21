@@ -21,6 +21,8 @@ describe("LibraryPage", () => {
               ratingCount: 2,
               averageRating: 4.5,
               viewerRating: null,
+              difficulty: "medium",
+              estimatedMinutes: 5,
             },
           ],
           page: 1,
@@ -45,6 +47,9 @@ describe("LibraryPage", () => {
       expect(screen.getByText("Vault Alpha")).toBeInTheDocument();
     });
 
+    expect(screen.getByText("medium")).toBeInTheDocument();
+    expect(screen.getByText("Estimated: 5 minutes")).toBeInTheDocument();
+
     fireEvent.change(screen.getByDisplayValue("Newest"), { target: { value: "name" } });
 
     await waitFor(() => {
@@ -67,6 +72,7 @@ describe("LibraryPage", () => {
               ratingCount: 2,
               averageRating: 4.5,
               viewerRating: null,
+              difficulty: "hard",
             },
           ],
           page: 1,
@@ -86,6 +92,7 @@ describe("LibraryPage", () => {
               ratingCount: 2,
               averageRating: 4.5,
               viewerRating: null,
+              difficulty: "hard",
             },
           ],
           page: 1,

@@ -31,6 +31,7 @@ public static class DependencyInjection
         services.AddSingleton<SetObjectStateEffectExecutor>();
         services.AddSingleton<CompleteSessionEffectExecutor>();
         services.AddSingleton<EmitClueEffectExecutor>();
+        services.AddSingleton<TransitionRoomEffectExecutor>();
 
         services.AddSingleton<IConditionRegistry, ConditionRegistry>();
         services.AddSingleton<ICombinatorRegistry, CombinatorRegistry>();

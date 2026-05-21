@@ -24,21 +24,33 @@ const featuredRoomsResponse = {
       estimatedMinutes: 3,
     },
     {
-      roomId: "room-hard",
+      roomId: "room-medium",
       name: "Crypt of Echoes",
-      description: "Hard room",
+      description: "Medium room",
       createdAtUtc: new Date().toISOString(),
       ratingCount: 3,
       averageRating: 4.2,
       viewerRating: null,
       isFeatured: true,
-      difficulty: "hard",
+      difficulty: "medium",
       estimatedMinutes: 5,
+    },
+    {
+      roomId: "room-hard",
+      name: "Velvet Vault",
+      description: "Hard room",
+      createdAtUtc: new Date().toISOString(),
+      ratingCount: 5,
+      averageRating: 4.8,
+      viewerRating: null,
+      isFeatured: true,
+      difficulty: "hard",
+      estimatedMinutes: 7,
     },
   ],
   page: 1,
   pageSize: 12,
-  total: 2,
+  total: 3,
 };
 
 const buildSessionSummary = (overrides?: Partial<Record<string, unknown>>) => ({
@@ -208,7 +220,9 @@ describe("PlayerPage", () => {
 
     expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
     expect(screen.getByText("Crypt of Echoes")).toBeInTheDocument();
+    expect(screen.getByText("Velvet Vault")).toBeInTheDocument();
     expect(screen.getByText("Estimated 5 min")).toBeInTheDocument();
+    expect(screen.getByText("Estimated 7 min")).toBeInTheDocument();
 
     const createButtons = screen.getAllByText("Create Lobby");
     fireEvent.click(createButtons[0]);
@@ -488,6 +502,75 @@ describe("PlayerPage", () => {
       expect(mockSubmitAction).toHaveBeenCalledWith(
         "session-123",
         expect.objectContaining({ actionType: "inventory.use", target: "final-lock" })
+      );
+    });
+  });
+
+  it("shows Use for reader targets and submits the object as inventory.use", async () => {
+    useGameStore.setState((current) => ({
+      ...current,
+      state: {
+        ...current.state,
+        room: {
+          ...current.state.room,
+          hotspots: [
+            {
+              id: "final-reader-hotspot",
+              objectId: "final-reader",
+              name: "Exit Reader",
+              visualKind: "switch",
+              variant: "reader",
+              x: 140,
+              y: 40,
+              width: 40,
+              height: 60,
+              color: "#f4b860",
+              visible: true,
+              available: true,
+              locked: false,
+              interactive: true,
+              targetableModes: ["use"],
+              targetableItemIds: ["exit-keycard"],
+            },
+          ],
+          objectStates: [{ id: "final-reader", visible: true, available: true, locked: false, interactive: true }],
+        },
+        inventory: [
+          {
+            id: "exit-keycard",
+            label: "Ivory Keycard",
+            quantity: 1,
+            type: "keycard",
+            stack: false,
+            status: "ready",
+            usableTargetIds: ["final-reader"],
+          },
+        ],
+      },
+    }));
+
+    render(<PlayerPage />);
+    fireEvent.click(screen.getByText("Create Session"));
+    expect(await screen.findByText("Clocktower Foyer")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByText("Quick Start")[0]);
+
+    await waitFor(() => {
+      expect(mockStart).toHaveBeenCalled();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Ivory Keycard/i }));
+    const inventoryUseButton = screen.getAllByRole("button", { name: "Use" }).find((button) => !button.hasAttribute("disabled"));
+    expect(inventoryUseButton).toBeDefined();
+    fireEvent.click(inventoryUseButton!);
+
+    const enabledUseButtons = screen.getAllByRole("button", { name: "Use" }).filter((button) => !button.hasAttribute("disabled"));
+    expect(enabledUseButtons.length).toBeGreaterThan(0);
+    fireEvent.click(enabledUseButtons[0]);
+
+    await waitFor(() => {
+      expect(mockSubmitAction).toHaveBeenCalledWith(
+        "session-123",
+        expect.objectContaining({ actionType: "inventory.use", target: "final-reader" })
       );
     });
   });

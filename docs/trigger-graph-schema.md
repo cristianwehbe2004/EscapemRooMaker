@@ -113,6 +113,7 @@ Execution policy for effect nodes.
 | `removeInventoryItem` | `itemId` or `id` | Removes an item from inventory |
 | `setObjectState` | `objectId`, `visible`, `available`, `locked`, `interactive` | Updates room object state used by hotspots/layers/assets |
 | `emitClue` | `clue` or `message` | Adds a player-facing clue and emits it as a message |
+| `transitionRoom` | `room`, optional `message` | Replaces the active room subtree in-session while preserving timer, inventory, and session continuity |
 | `completeSession` | `message` | Marks the session completed and emits an optional completion message |
 
 ## Player Actions

@@ -15,7 +15,7 @@ type RoomCanvasProps = {
 };
 
 type ThemePack = {
-  id: "clocktower" | "crypt" | "default";
+  id: "clocktower" | "crypt" | "artdeco" | "default";
   ambientShadow: string;
   objectStroke: string;
   warmLight: string;
@@ -166,6 +166,16 @@ const resolveThemePack = (themeId?: string, roomName?: string): ThemePack => {
     };
   }
 
+  if (value.includes("artdeco") || value.includes("vault") || value.includes("velvet")) {
+    return {
+      id: "artdeco",
+      ambientShadow: "rgba(6, 10, 24, 0.34)",
+      objectStroke: "#f4c46a",
+      warmLight: "rgba(245, 158, 11, 0.22)",
+      coolLight: "rgba(148, 163, 184, 0.16)",
+    };
+  }
+
   return {
     id: "default",
     ambientShadow: "rgba(2, 6, 23, 0.25)",
@@ -175,19 +185,28 @@ const resolveThemePack = (themeId?: string, roomName?: string): ThemePack => {
   };
 };
 
-type HotspotKind = "key" | "door" | "note" | "chest" | "drawer" | "lock" | "switch" | "generic";
+type HotspotKind = "key" | "door" | "note" | "chest" | "drawer" | "lock" | "switch" | "cabinet" | "panel" | "generic";
+
+const getHotspotSemanticText = (hotspot: RoomHotspot): string =>
+  `${hotspot.id} ${hotspot.name} ${hotspot.visualKind ?? ""} ${hotspot.variant ?? ""}`.toLowerCase();
 
 const classifyHotspot = (hotspot: RoomHotspot): HotspotKind => {
+  const semanticValue = getHotspotSemanticText(hotspot);
   const explicit = hotspot.visualKind?.toLowerCase();
-  if (explicit === "key" || explicit === "door" || explicit === "note" || explicit === "chest" || explicit === "drawer" || explicit === "lock" || explicit === "switch") {
+  if (explicit === "key" || explicit === "door" || explicit === "note" || explicit === "chest" || explicit === "drawer" || explicit === "lock" || explicit === "switch" || explicit === "cabinet" || explicit === "panel") {
+    if (explicit === "switch" && (semanticValue.includes("reader") || semanticValue.includes("panel"))) {
+      return "panel";
+    }
     return explicit;
   }
 
-  const value = `${hotspot.id} ${hotspot.name}`.toLowerCase();
+  const value = semanticValue;
   if (value.includes("key")) return "key";
   if (value.includes("door") || value.includes("gate")) return "door";
   if (value.includes("note") || value.includes("panel") || value.includes("book")) return "note";
   if (value.includes("drawer")) return "drawer";
+  if (value.includes("cabinet") || value.includes("locker")) return "cabinet";
+  if (value.includes("reader") || value.includes("badge") || value.includes("panel")) return "panel";
   if (value.includes("lock")) return "lock";
   if (value.includes("chest") || value.includes("box")) return "chest";
   if (value.includes("switch") || value.includes("lever")) return "switch";
@@ -197,6 +216,10 @@ const classifyHotspot = (hotspot: RoomHotspot): HotspotKind => {
 const getHotspotPrimaryActionLabel = (hotspot: RoomHotspot): string => {
   const kind = classifyHotspot(hotspot);
   if (kind === "drawer") {
+    return "Open";
+  }
+
+  if (kind === "cabinet") {
     return "Open";
   }
 
@@ -212,13 +235,20 @@ const getHotspotPrimaryActionLabel = (hotspot: RoomHotspot): string => {
 };
 
 const shouldPrimaryActionPickup = (hotspot: RoomHotspot): boolean => {
+  const semanticValue = getHotspotSemanticText(hotspot);
   const kind = classifyHotspot(hotspot);
-  if (kind === "key" || kind === "switch") {
+  if (kind === "key") {
     return true;
   }
 
-  const value = `${hotspot.id} ${hotspot.name} ${hotspot.variant ?? ""}`.toLowerCase();
-  return value.includes("flask") || value.includes("handle") || value.includes("cache");
+  return (
+    semanticValue.includes("flask") ||
+    semanticValue.includes("handle") ||
+    semanticValue.includes("cache") ||
+    semanticValue.includes("badge") ||
+    semanticValue.includes("magnet") ||
+    semanticValue.includes("retriever")
+  );
 };
 
 const shouldRenderHotspot = (hotspot: RoomHotspot, theme: ThemePack): boolean => {
@@ -299,6 +329,39 @@ const renderHotspotObject = (
   const rotation = options?.rotation ?? 0;
   const opacity = options?.opacity ?? 1;
   const unlockProgress = options?.unlockProgress ?? 0;
+  const semanticValue = getHotspotSemanticText(hotspot);
+
+  if (semanticValue.includes("badge")) {
+    return (
+      <GroupNode id={options?.nodeId} x={x} y={y} rotation={rotation} opacity={opacity}>
+        <LineNode points={[w * 0.52, 0, w * 0.52, h * 0.18]} stroke="#e2e8f0" strokeWidth={2} opacity={0.8} />
+        <CircleNode x={w * 0.52} y={h * 0.12} radius={Math.max(3, Math.min(w, h) * 0.08)} fill="#f8fafc" />
+        <Rect x={w * 0.12} y={h * 0.18} width={w * 0.78} height={h * 0.7} fill="#14324a" stroke="#f4c46a" strokeWidth={2} cornerRadius={8} />
+        <Rect x={w * 0.2} y={h * 0.28} width={w * 0.62} height={h * 0.14} fill="#f4c46a" cornerRadius={3} opacity={0.9} />
+        <CircleNode x={w * 0.28} y={h * 0.58} radius={Math.max(4, Math.min(w, h) * 0.12)} fill="#f59e0b" />
+        <LineNode points={[w * 0.42, h * 0.54, w * 0.74, h * 0.54]} stroke="#cbd5e1" strokeWidth={2} />
+        <LineNode points={[w * 0.42, h * 0.68, w * 0.66, h * 0.68]} stroke="#94a3b8" strokeWidth={2} />
+      </GroupNode>
+    );
+  }
+
+  if (semanticValue.includes("vent")) {
+    return (
+      <GroupNode id={options?.nodeId} x={x} y={y} rotation={rotation} opacity={opacity}>
+        <Rect x={0} y={0} width={w} height={h} fill="#5b6574" stroke="#cbd5e1" strokeWidth={2} cornerRadius={5} />
+        <Rect x={w * 0.04} y={h * 0.08} width={w * 0.92} height={h * 0.84} fill="rgba(15, 23, 42, 0.28)" cornerRadius={4} />
+        {Array.from({ length: 5 }).map((_, index) => (
+          <LineNode
+            key={`${hotspot.id}-vent-slat-${index}`}
+            points={[w * 0.12, h * (0.24 + index * 0.12), w * 0.88, h * (0.14 + index * 0.12)]}
+            stroke="#cbd5e1"
+            strokeWidth={2}
+            opacity={0.82}
+          />
+        ))}
+      </GroupNode>
+    );
+  }
 
   if (kind === "key") {
     return (
@@ -335,11 +398,48 @@ const renderHotspotObject = (
   }
 
   if (kind === "drawer") {
+    const isWood = semanticValue.includes("wood") || semanticValue.includes("desk") || semanticValue.includes("clerk");
     return (
       <GroupNode id={options?.nodeId} x={x} y={y} rotation={rotation} opacity={opacity}>
-        <Rect x={0} y={0} width={w} height={h} fill={hotspot.locked ? "#65452f" : "#8a6141"} cornerRadius={6} />
-        <Rect x={w * 0.08} y={h * 0.2} width={w * 0.84} height={h * 0.6} stroke="#c68b59" strokeWidth={2} cornerRadius={4} />
-        <CircleNode x={w * 0.5} y={h * 0.5} radius={Math.max(4, Math.min(w, h) * 0.08)} fill={hotspot.locked ? "#8b6b3f" : "#f1c27d"} />
+        <Rect
+          x={0}
+          y={0}
+          width={w}
+          height={h}
+          fill={isWood ? "rgba(127, 85, 57, 0.2)" : "rgba(71, 85, 105, 0.16)"}
+          stroke={isWood ? "#d6a56d" : "#d2b575"}
+          strokeWidth={2}
+          cornerRadius={6}
+        />
+        <Rect
+          x={w * 0.08}
+          y={h * 0.18}
+          width={w * 0.84}
+          height={h * 0.64}
+          stroke={isWood ? "#f1c27d" : "#cbd5e1"}
+          strokeWidth={1.6}
+          cornerRadius={4}
+          opacity={0.75}
+        />
+        <LineNode
+          points={[w * 0.34, h * 0.5, w * 0.66, h * 0.5]}
+          stroke={isWood ? "#f8deb1" : "#e2e8f0"}
+          strokeWidth={3}
+          lineCap="round"
+          opacity={0.86}
+        />
+      </GroupNode>
+    );
+  }
+
+  if (kind === "cabinet") {
+    return (
+      <GroupNode id={options?.nodeId} x={x} y={y} rotation={rotation} opacity={opacity}>
+        <Rect x={0} y={0} width={w} height={h} fill="rgba(71, 85, 105, 0.14)" stroke="#cbd5e1" strokeWidth={2} cornerRadius={6} />
+        <Rect x={w * 0.12} y={h * 0.1} width={w * 0.76} height={h * 0.8} stroke="#d2b575" strokeWidth={1.8} cornerRadius={4} opacity={0.82} />
+        <LineNode points={[w * 0.5, h * 0.1, w * 0.5, h * 0.9]} stroke="#d2b575" strokeWidth={1.6} opacity={0.82} />
+        <CircleNode x={w * 0.4} y={h * 0.5} radius={Math.max(3, Math.min(w, h) * 0.05)} fill="#f8e3ae" />
+        <CircleNode x={w * 0.6} y={h * 0.5} radius={Math.max(3, Math.min(w, h) * 0.05)} fill="#f8e3ae" />
       </GroupNode>
     );
   }
@@ -383,6 +483,18 @@ const renderHotspotObject = (
       <GroupNode id={options?.nodeId} x={x} y={y} rotation={rotation} opacity={opacity}>
         <Rect x={0} y={0} width={w} height={h} fill="#374151" cornerRadius={6} />
         <LineNode points={[w * 0.4, h * 0.75, w * 0.6, h * 0.3]} stroke="#e5e7eb" strokeWidth={5} lineCap="round" />
+      </GroupNode>
+    );
+  }
+
+  if (kind === "panel") {
+    return (
+      <GroupNode id={options?.nodeId} x={x} y={y} rotation={rotation} opacity={opacity}>
+        <Rect x={0} y={0} width={w} height={h} fill="#263243" cornerRadius={6} />
+        <Rect x={w * 0.14} y={h * 0.14} width={w * 0.72} height={h * 0.72} fill="#111827" stroke="#f4c46a" strokeWidth={2} cornerRadius={4} />
+        <CircleNode x={w * 0.28} y={h * 0.32} radius={Math.max(3, Math.min(w, h) * 0.06)} fill="#fb923c" />
+        <CircleNode x={w * 0.5} y={h * 0.32} radius={Math.max(3, Math.min(w, h) * 0.06)} fill="#fde68a" />
+        <CircleNode x={w * 0.72} y={h * 0.32} radius={Math.max(3, Math.min(w, h) * 0.06)} fill="#60a5fa" />
       </GroupNode>
     );
   }
@@ -557,6 +669,98 @@ const CanvasAsset: React.FC<{ asset: RoomAsset; theme: ThemePack }> = ({ asset, 
         <Rect x={0} y={0} width={asset.width} height={asset.height} fill="#24170f" cornerRadius={6} />
         <Rect x={asset.width * 0.1} y={asset.height * 0.06} width={asset.width * 0.8} height={asset.height * 0.9} fill="#3b2418" cornerRadius={5} />
         <Rect x={asset.width * 0.16} y={asset.height * 0.14} width={asset.width * 0.68} height={asset.height * 0.74} stroke="#5c3a28" strokeWidth={6} />
+      </GroupNode>
+    );
+  }
+
+  if (visualKind === "artdeco-wall") {
+    return (
+      <GroupNode x={asset.x} y={asset.y}>
+        <Rect x={0} y={0} width={asset.width} height={asset.height} fill="#1c1630" />
+        {Array.from({ length: 7 }).map((_, index) => (
+          <LineNode
+            key={`${asset.id}-stripe-${index}`}
+            points={[90 + index * 140, 0, 40 + index * 140, asset.height]}
+            stroke="rgba(244, 196, 106, 0.18)"
+            strokeWidth={8}
+          />
+        ))}
+        <Rect x={0} y={0} width={asset.width} height={32} fill="rgba(244, 196, 106, 0.12)" />
+      </GroupNode>
+    );
+  }
+
+  if (visualKind === "marble-floor") {
+    return (
+      <GroupNode x={asset.x} y={asset.y}>
+        <Rect x={0} y={0} width={asset.width} height={asset.height} fill="#2a2338" />
+        {Array.from({ length: 9 }).map((_, index) => (
+          <LineNode
+            key={`${asset.id}-vein-${index}`}
+            points={[index * 120, 0, index * 120 + 80, asset.height]}
+            stroke="rgba(226, 232, 240, 0.12)"
+            strokeWidth={2}
+          />
+        ))}
+      </GroupNode>
+    );
+  }
+
+  if (visualKind === "deco-arch") {
+    return (
+      <GroupNode x={asset.x} y={asset.y}>
+        <Rect x={0} y={asset.height * 0.08} width={asset.width} height={asset.height * 0.92} fill="#221627" cornerRadius={8} />
+        <Rect x={asset.width * 0.08} y={asset.height * 0.16} width={asset.width * 0.84} height={asset.height * 0.76} stroke="#d2b575" strokeWidth={6} cornerRadius={8} />
+        <LineNode points={[asset.width * 0.14, asset.height * 0.26, asset.width * 0.5, 0, asset.width * 0.86, asset.height * 0.26]} stroke="#d2b575" strokeWidth={5} lineJoin="round" />
+      </GroupNode>
+    );
+  }
+
+  if (visualKind === "office-desk") {
+    return (
+      <GroupNode x={asset.x} y={asset.y}>
+        <Rect x={0} y={0} width={asset.width} height={asset.height * 0.24} fill="#70492f" cornerRadius={7} />
+        <Rect x={asset.width * 0.06} y={asset.height * 0.2} width={asset.width * 0.22} height={asset.height * 0.78} fill="#503122" cornerRadius={4} />
+        <Rect x={asset.width * 0.72} y={asset.height * 0.2} width={asset.width * 0.22} height={asset.height * 0.78} fill="#503122" cornerRadius={4} />
+        <Rect x={asset.width * 0.34} y={asset.height * 0.26} width={asset.width * 0.32} height={asset.height * 0.58} fill="#5f3a28" cornerRadius={4} />
+      </GroupNode>
+    );
+  }
+
+  if (visualKind === "filing-cabinet") {
+    return (
+      <GroupNode x={asset.x} y={asset.y}>
+        <Rect x={0} y={0} width={asset.width} height={asset.height} fill="#536275" cornerRadius={6} />
+        {[0.08, 0.36, 0.64].map((yRatio) => (
+          <GroupNode key={`${asset.id}-${yRatio}`} x={0} y={asset.height * yRatio}>
+            <Rect x={asset.width * 0.08} y={0} width={asset.width * 0.84} height={asset.height * 0.22} stroke="#d2b575" strokeWidth={2} cornerRadius={4} />
+            <Rect x={asset.width * 0.36} y={asset.height * 0.08} width={asset.width * 0.28} height={asset.height * 0.04} fill="#d2b575" cornerRadius={2} />
+          </GroupNode>
+        ))}
+      </GroupNode>
+    );
+  }
+
+  if (visualKind === "reader-panel") {
+    return (
+      <GroupNode x={asset.x} y={asset.y}>
+        <Rect x={0} y={0} width={asset.width} height={asset.height} fill="#1f2937" cornerRadius={6} />
+        <Rect x={asset.width * 0.14} y={asset.height * 0.12} width={asset.width * 0.72} height={asset.height * 0.76} fill="#0f172a" stroke="#f4c46a" strokeWidth={2} cornerRadius={4} />
+        <CircleNode x={asset.width * 0.3} y={asset.height * 0.24} radius={asset.width * 0.08} fill="#fb923c" />
+        <CircleNode x={asset.width * 0.5} y={asset.height * 0.24} radius={asset.width * 0.08} fill="#fde68a" />
+        <CircleNode x={asset.width * 0.7} y={asset.height * 0.24} radius={asset.width * 0.08} fill="#60a5fa" />
+      </GroupNode>
+    );
+  }
+
+  if (visualKind === "vault-door") {
+    return (
+      <GroupNode x={asset.x} y={asset.y}>
+        <CircleNode x={asset.width / 2} y={asset.height / 2} radius={Math.min(asset.width, asset.height) * 0.5} fill="#475569" />
+        <CircleNode x={asset.width / 2} y={asset.height / 2} radius={Math.min(asset.width, asset.height) * 0.38} stroke="#d2b575" strokeWidth={8} />
+        <LineNode points={[asset.width * 0.2, asset.height * 0.5, asset.width * 0.8, asset.height * 0.5]} stroke="#d2b575" strokeWidth={6} />
+        <LineNode points={[asset.width * 0.5, asset.height * 0.2, asset.width * 0.5, asset.height * 0.8]} stroke="#d2b575" strokeWidth={6} />
+        <CircleNode x={asset.width / 2} y={asset.height / 2} radius={asset.width * 0.08} fill="#e5c07b" />
       </GroupNode>
     );
   }

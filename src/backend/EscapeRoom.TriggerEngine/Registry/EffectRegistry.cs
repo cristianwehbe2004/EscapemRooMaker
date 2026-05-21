@@ -10,7 +10,8 @@ public class EffectRegistry(
     RemoveInventoryItemEffectExecutor removeInventoryItemEffectExecutor,
     SetObjectStateEffectExecutor setObjectStateEffectExecutor,
     CompleteSessionEffectExecutor completeSessionEffectExecutor,
-    EmitClueEffectExecutor emitClueEffectExecutor) : IEffectRegistry
+    EmitClueEffectExecutor emitClueEffectExecutor,
+    TransitionRoomEffectExecutor transitionRoomEffectExecutor) : IEffectRegistry
 {
     private readonly Dictionary<string, IEffectExecutor> _executors = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -20,7 +21,8 @@ public class EffectRegistry(
         ["removeInventoryItem"] = removeInventoryItemEffectExecutor,
         ["setObjectState"] = setObjectStateEffectExecutor,
         ["completeSession"] = completeSessionEffectExecutor,
-        ["emitClue"] = emitClueEffectExecutor
+        ["emitClue"] = emitClueEffectExecutor,
+        ["transitionRoom"] = transitionRoomEffectExecutor
     };
 
     public IEffectExecutor Get(string type)

@@ -4,6 +4,23 @@ import { LibraryRoomListItemDto, LibraryRoomsResponse, UpsertRoomRatingResponse 
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
 const pageSize = 20;
 
+const getDifficultyChipClass = (difficulty?: string | null): string => {
+  const value = difficulty?.toLowerCase();
+  if (value === "hard") {
+    return "bg-rose-900/70 text-rose-200";
+  }
+
+  if (value === "medium") {
+    return "bg-amber-900/70 text-amber-200";
+  }
+
+  if (value === "easy") {
+    return "bg-emerald-900/70 text-emerald-200";
+  }
+
+  return "bg-slate-700 text-slate-200";
+};
+
 const LibraryPage: React.FC = () => {
   const [accessToken, setAccessToken] = useState("");
   const [queryInput, setQueryInput] = useState("");
@@ -148,7 +165,7 @@ const LibraryPage: React.FC = () => {
               <div className="flex items-center gap-2">
                 {room.isFeatured && <span className="rounded bg-sky-800 px-2 py-1 text-[10px] uppercase tracking-wider text-sky-200">featured</span>}
                 {room.difficulty && (
-                  <span className="rounded bg-slate-700 px-2 py-1 text-[10px] uppercase tracking-wider text-slate-200">{room.difficulty}</span>
+                  <span className={`rounded px-2 py-1 text-[10px] uppercase tracking-wider ${getDifficultyChipClass(room.difficulty)}`}>{room.difficulty}</span>
                 )}
                 <p className="text-xs text-slate-400">{new Date(room.createdAtUtc).toLocaleString()}</p>
               </div>

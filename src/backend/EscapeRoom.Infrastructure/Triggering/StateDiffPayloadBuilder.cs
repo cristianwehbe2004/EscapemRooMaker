@@ -96,6 +96,7 @@ public static class StateDiffPayloadBuilder
         {
             var roomPatch = new JsonObject();
             CopyNode(room, roomPatch, "roomName");
+            CopyNode(room, roomPatch, "themeId");
             CopyNode(room, roomPatch, "width");
             CopyNode(room, roomPatch, "height");
             CopyNode(room, roomPatch, "backgroundColor");
@@ -104,6 +105,11 @@ public static class StateDiffPayloadBuilder
             CopyNode(room, roomPatch, "hotspots");
             CopyNode(room, roomPatch, "objectStates");
             CopyNode(room, roomPatch, "interactables");
+
+            if (normalizedChanges.Any(change => string.Equals(change, "room.transition", StringComparison.Ordinal)))
+            {
+                roomPatch["replace"] = true;
+            }
 
             if (roomPatch.Count > 0)
             {

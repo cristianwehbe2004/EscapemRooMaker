@@ -79,5 +79,38 @@ public class StateDiffPayloadBuilderTests
         patch.Should().BeNull();
         fullStateJson.Should().Be(updatedState);
     }
-}
 
+    [Fact]
+    public void Build_ShouldMarkRoomPatchAsReplace_ForRoomTransition()
+    {
+        const string updatedState = """
+        {
+          "room": {
+            "roomName": "Inner Vault",
+            "themeId": "artdeco",
+            "width": 900,
+            "height": 560,
+            "backgroundColor": "#111827",
+            "assets": [],
+            "layers": [],
+            "hotspots": [],
+            "objectStates": []
+          },
+          "session": {
+            "roomName": "Inner Vault"
+          }
+        }
+        """;
+
+        var (patch, fullStateJson) = StateDiffPayloadBuilder.Build(
+            updatedState,
+            "inspect",
+            ["room.transition", "room", "session"]);
+
+        patch.Should().NotBeNull();
+        patch!.Room.Should().NotBeNull();
+        patch.Room!["replace"]!.GetValue<bool>().Should().BeTrue();
+        patch.Room!["themeId"]!.GetValue<string>().Should().Be("artdeco");
+        fullStateJson.Should().BeNull();
+    }
+}

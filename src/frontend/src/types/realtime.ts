@@ -24,13 +24,17 @@ export interface InventoryItemPatch {
 
 export interface StatePatchEnvelope {
   room?: {
+    replace?: boolean;
     roomName?: string;
+    themeId?: string;
     width?: number;
     height?: number;
     backgroundColor?: string;
     assets?: Array<{
       id: string;
       kind?: "background" | "sprite" | "overlay";
+      visualKind?: string;
+      variant?: string;
       x?: number;
       y?: number;
       width?: number;
@@ -45,6 +49,7 @@ export interface StatePatchEnvelope {
     layers?: Array<{
       id: string;
       name?: string;
+      visualKind?: string;
       zIndex?: number;
       visible?: boolean;
       opacity?: number;
@@ -55,6 +60,8 @@ export interface StatePatchEnvelope {
     hotspots?: Array<{
       id: string;
       name?: string;
+      visualKind?: string;
+      variant?: string;
       x?: number;
       y?: number;
       width?: number;

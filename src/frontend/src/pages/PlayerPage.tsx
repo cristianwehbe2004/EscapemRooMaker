@@ -27,6 +27,9 @@ type HotspotQuickAction = {
   disabled: boolean;
 };
 
+const getHotspotSemanticText = (hotspot: RoomHotspot): string =>
+  `${hotspot.id} ${hotspot.name} ${hotspot.visualKind ?? ""} ${hotspot.variant ?? ""}`.toLowerCase();
+
 const ensureGuestActorId = (): string => {
   if (typeof window === "undefined") {
     return `guest-${Math.random().toString(16).slice(2)}`;
@@ -52,12 +55,16 @@ const formatSeconds = (seconds: number): string => {
 const getDoorActionLabel = (hotspot: RoomHotspot): "Inspect" | "Open" => (hotspot.locked ? "Inspect" : "Open");
 
 const classifyHotspotKind = (hotspot: RoomHotspot): "note" | "drawer" | "key" | "door" | "lock" | "switch" | "generic" => {
+  const semanticValue = getHotspotSemanticText(hotspot);
   const explicit = hotspot.visualKind?.toLowerCase();
   if (explicit === "note" || explicit === "drawer" || explicit === "key" || explicit === "door" || explicit === "lock" || explicit === "switch") {
+    if (explicit === "switch" && (semanticValue.includes("reader") || semanticValue.includes("panel"))) {
+      return "lock";
+    }
     return explicit;
   }
 
-  const value = `${hotspot.id} ${hotspot.name}`.toLowerCase();
+  const value = semanticValue;
   if (value.includes("note")) return "note";
   if (value.includes("drawer")) return "drawer";
   if (value.includes("key")) return "key";
@@ -68,13 +75,20 @@ const classifyHotspotKind = (hotspot: RoomHotspot): "note" | "drawer" | "key" | 
 };
 
 const isPickupPreferredHotspot = (hotspot: RoomHotspot): boolean => {
+  const semanticValue = getHotspotSemanticText(hotspot);
   const kind = classifyHotspotKind(hotspot);
-  if (kind === "key" || kind === "switch") {
+  if (kind === "key") {
     return true;
   }
 
-  const value = `${hotspot.id} ${hotspot.name} ${hotspot.variant ?? ""}`.toLowerCase();
-  return value.includes("flask") || value.includes("handle") || value.includes("cache");
+  return (
+    semanticValue.includes("flask") ||
+    semanticValue.includes("handle") ||
+    semanticValue.includes("cache") ||
+    semanticValue.includes("badge") ||
+    semanticValue.includes("magnet") ||
+    semanticValue.includes("retriever")
+  );
 };
 
 const shouldShowHotspotInUi = (hotspot: RoomHotspot): boolean => {
@@ -113,6 +127,19 @@ const canUseHotspotWithItem = (hotspot: RoomHotspot, selectedItem: InventoryItem
   }
 
   return true;
+};
+
+const shouldExposeUseAction = (hotspot: RoomHotspot): boolean => {
+  if (hotspot.targetableModes?.includes("use")) {
+    return true;
+  }
+
+  if ((hotspot.targetableItemIds?.length ?? 0) > 0) {
+    return true;
+  }
+
+  const semanticValue = getHotspotSemanticText(hotspot);
+  return semanticValue.includes("reader") || semanticValue.includes("lock") || semanticValue.includes("vent") || semanticValue.includes("vault");
 };
 
 const PlayerPage: React.FC = () => {
@@ -760,19 +787,21 @@ const PlayerPage: React.FC = () => {
       const kind = classifyHotspotKind(hotspot);
       const actions: HotspotQuickAction[] = [];
 
-      if (kind === "key" || kind === "switch" || isPickupPreferredHotspot(hotspot)) {
+      if ((kind === "key" && !shouldExposeUseAction(hotspot)) || isPickupPreferredHotspot(hotspot)) {
         actions.push({ key: `${hotspot.id}-pickup`, label: "Pickup", actionType: "pickup", disabled: !canInteract || hotspot.locked });
       } else if (kind === "drawer") {
         actions.push({ key: `${hotspot.id}-open`, label: "Open", actionType: "inspect", disabled: !canInteract });
       } else if (kind === "note") {
         actions.push({ key: `${hotspot.id}-inspect`, label: "Inspect", actionType: "inspect", disabled: !canInteract });
         actions.push({ key: `${hotspot.id}-pickup`, label: "Pickup", actionType: "pickup", disabled: !canInteract || hotspot.locked });
-      } else if (kind === "door" || kind === "lock") {
+      } else if (kind === "door" || kind === "lock" || kind === "switch") {
         if (kind === "door" && !hotspot.locked) {
           actions.push({ key: `${hotspot.id}-open`, label: getDoorActionLabel(hotspot), actionType: "inspect", disabled: !canInteract });
         } else {
-          const canUse = canInteract && inventoryInteractionMode === "use" && canUseHotspotWithItem(hotspot, selectedInventoryItem);
-          actions.push({ key: `${hotspot.id}-use`, label: "Use", actionType: "use", disabled: !canUse });
+          if (shouldExposeUseAction(hotspot)) {
+            const canUse = canInteract && inventoryInteractionMode === "use" && canUseHotspotWithItem(hotspot, selectedInventoryItem);
+            actions.push({ key: `${hotspot.id}-use`, label: "Use", actionType: "use", disabled: !canUse });
+          }
           actions.push({
             key: `${hotspot.id}-inspect`,
             label: kind === "door" ? getDoorActionLabel(hotspot) : "Inspect",
@@ -871,6 +900,8 @@ const PlayerPage: React.FC = () => {
           const chipClass =
             difficulty === "hard"
               ? "bg-rose-900/70 text-rose-200"
+              : difficulty === "medium"
+                ? "bg-amber-900/70 text-amber-200"
               : difficulty === "easy"
                 ? "bg-emerald-900/70 text-emerald-200"
                 : "bg-slate-700 text-slate-200";

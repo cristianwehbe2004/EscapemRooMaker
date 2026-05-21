@@ -30,7 +30,8 @@ public class TriggerGraphEvaluatorTests
                 new RemoveInventoryItemEffectExecutor(),
                 new SetObjectStateEffectExecutor(),
                 new CompleteSessionEffectExecutor(),
-                new EmitClueEffectExecutor()),
+                new EmitClueEffectExecutor(),
+                new TransitionRoomEffectExecutor()),
             new NoopIdempotencyStore(),
             new IdempotencyKeyBuilder());
     }
@@ -253,6 +254,74 @@ public class TriggerGraphEvaluatorTests
             });
 
         result.AppliedEffects.Should().Contain("effect");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_ShouldTransitionRoomAndPreserveInventory()
+    {
+        var graph = new TriggerGraphDefinition
+        {
+            Nodes =
+            [
+                new()
+                {
+                    NodeId = "cond",
+                    Family = "condition",
+                    Type = "actionTypeEquals",
+                    Config = new Dictionary<string, object?> { ["expectedActionType"] = "inspect" }
+                },
+                new()
+                {
+                    NodeId = "effect",
+                    Family = "effect",
+                    Type = "transitionRoom",
+                    Config = new Dictionary<string, object?>
+                    {
+                        ["room"] = new Dictionary<string, object?>
+                        {
+                            ["roomName"] = "Inner Vault",
+                            ["themeId"] = "artdeco",
+                            ["width"] = 800,
+                            ["height"] = 500,
+                            ["backgroundColor"] = "#111827",
+                            ["assets"] = Array.Empty<object>(),
+                            ["layers"] = Array.Empty<object>(),
+                            ["hotspots"] = Array.Empty<object>(),
+                            ["objectStates"] = Array.Empty<object>()
+                        }
+                    }
+                }
+            ],
+            Edges = [new() { FromNodeId = "cond", ToNodeId = "effect" }]
+        };
+
+        var result = await _evaluator.EvaluateAsync(
+            graph,
+            new EvaluationContext
+            {
+                SessionId = Guid.NewGuid(),
+                RoomId = Guid.NewGuid(),
+                Action = new PlayerActionEnvelope { ActionType = "inspect", ClientActionId = "client-2" },
+                State = JsonNode.Parse("""
+                    {
+                      "room": {
+                        "roomName": "Outer Office"
+                      },
+                      "inventory": [
+                        { "id": "vault-key", "label": "Vault Key", "quantity": 1 }
+                      ],
+                      "session": {
+                        "roomName": "Outer Office"
+                      }
+                    }
+                    """)!.AsObject()
+            });
+
+        result.ChangedEntities.Should().Contain("room.transition");
+        result.ChangedEntities.Should().Contain("room");
+        result.ChangedEntities.Should().Contain("session");
+        result.UpdatedStateJson.Should().Contain("Inner Vault");
+        result.UpdatedStateJson.Should().Contain("vault-key");
     }
 
     [Fact]

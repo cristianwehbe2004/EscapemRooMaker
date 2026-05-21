@@ -159,6 +159,89 @@ describe("gameStore", () => {
     expect(chest?.interactive).toBe(false);
   });
 
+  it("replaces the entire room payload for room transition patches", () => {
+    const snapshot: SessionSnapshotEnvelope = {
+      sessionId: "transition-session",
+      sessionVersion: 1,
+      stateJson: JSON.stringify({
+        room: {
+          roomName: "Outer Office",
+          themeId: "artdeco",
+          width: 960,
+          height: 620,
+          backgroundColor: "#120f1d",
+          assets: [{ id: "office-wall", kind: "background", x: 0, y: 0, width: 960, height: 620, zIndex: 0, visible: true, opacity: 1 }],
+          hotspots: [
+            {
+              id: "outer-door",
+              name: "Outer Door",
+              x: 10,
+              y: 10,
+              width: 80,
+              height: 160,
+              color: "#888",
+              visible: true,
+              available: true,
+              locked: true,
+              interactive: true,
+            },
+          ],
+          objectStates: [{ id: "outer-door", visible: true, available: true, locked: true, interactive: true }],
+        },
+      }),
+      serverTimeUtc: new Date().toISOString(),
+    };
+    useGameStore.getState().applySnapshot(snapshot);
+
+    const diff: StateDiffEnvelope = {
+      sessionVersion: 2,
+      diffSequence: 3,
+      correlationId: "transition",
+      emittedAtUtc: new Date().toISOString(),
+      changedEntities: ["room.transition", "room", "session"],
+      emittedMessages: [],
+      appliedEffects: ["transition-room"],
+      statePatch: {
+        room: {
+          replace: true,
+          roomName: "Inner Vault",
+          themeId: "artdeco",
+          width: 800,
+          height: 520,
+          backgroundColor: "#0f172a",
+          assets: [{ id: "vault-wall", kind: "background", x: 0, y: 0, width: 800, height: 520, zIndex: 0, visible: true, opacity: 1 }],
+          hotspots: [
+            {
+              id: "small-vault",
+              name: "Small Vault",
+              x: 200,
+              y: 120,
+              width: 140,
+              height: 140,
+              color: "#94a3b8",
+              visible: true,
+              available: true,
+              locked: true,
+              interactive: true,
+            },
+          ],
+          objectStates: [{ id: "small-vault", visible: true, available: true, locked: true, interactive: true }],
+        },
+        session: {
+          roomName: "Inner Vault",
+        },
+      },
+    };
+
+    useGameStore.getState().applyDiff(diff);
+    const state = useGameStore.getState().state;
+
+    expect(state.room.roomName).toBe("Inner Vault");
+    expect(state.room.hotspots).toHaveLength(1);
+    expect(state.room.hotspots[0].id).toBe("small-vault");
+    expect(state.room.hotspots.find((entry) => entry.id === "outer-door")).toBeUndefined();
+  });
+
   it("flags non-message diffs without patch for snapshot resync", () => {
     const messageOnly: StateDiffEnvelope = {
       sessionVersion: 2,

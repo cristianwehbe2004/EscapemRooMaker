@@ -142,7 +142,8 @@ public class RegistryTests
                 new RemoveInventoryItemEffectExecutor(),
                 new SetObjectStateEffectExecutor(),
                 new CompleteSessionEffectExecutor(),
-                new EmitClueEffectExecutor());
+                new EmitClueEffectExecutor(),
+                new TransitionRoomEffectExecutor());
         }
 
         [Theory]
@@ -187,6 +188,15 @@ public class RegistryTests
             var set = _registry.Get("setStateValue");
 
             emit.Should().NotBeSameAs(set);
+        }
+
+        [Fact]
+        public void Get_ShouldResolveTransitionRoom()
+        {
+            var executor = _registry.Get("transitionRoom");
+
+            executor.Should().NotBeNull();
+            executor.Should().BeOfType<TransitionRoomEffectExecutor>();
         }
     }
 
