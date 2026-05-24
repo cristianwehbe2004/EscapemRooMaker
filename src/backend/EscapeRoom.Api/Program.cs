@@ -35,6 +35,13 @@ var jwtIssuer = builder.Configuration["Jwt:Issuer"]
     ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
 var jwtAudience = builder.Configuration["Jwt:Audience"]
     ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
+var jwtKeyBytes = Encoding.UTF8.GetBytes(jwtKey);
+
+if (jwtKeyBytes.Length < 32)
+{
+    throw new InvalidOperationException(
+        $"Jwt:Key must be at least 32 bytes for HS256 signing. Current configured size is {jwtKeyBytes.Length} bytes.");
+}
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -48,7 +55,7 @@ builder.Services
             ValidateIssuerSigningKey = true,
             ValidIssuer = jwtIssuer,
             ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+            IssuerSigningKey = new SymmetricSecurityKey(jwtKeyBytes)
         };
     });
 

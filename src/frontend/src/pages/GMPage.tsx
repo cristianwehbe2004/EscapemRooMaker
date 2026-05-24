@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuthSession } from "../auth/authSession";
+import AuthPanel from "../components/auth/AuthPanel";
 import ReconnectBanner from "../components/ui/ReconnectBanner";
 import { GameRealtimeClient } from "../realtime/gameRealtimeClient";
 import { runSessionRecovery } from "../realtime/recoveryController";
@@ -39,7 +41,7 @@ const GMPage: React.FC = () => {
 		state,
 	} = useGameStore();
 
-	const [accessToken, setAccessToken] = useState("");
+	const { accessToken } = useAuthSession();
 	const [selectedSessionId, setSelectedSessionId] = useState("");
 	const [sessions, setSessions] = useState<GmSessionSummary[]>([]);
 	const [timeline, setTimeline] = useState<SessionTimelineEntry[]>([]);
@@ -253,6 +255,10 @@ const GMPage: React.FC = () => {
 
 	return (
 		<main className="mx-auto flex max-w-7xl flex-col gap-4 p-4 text-slate-100">
+			<AuthPanel
+				title="GM Access"
+				subtitle="Sign in with a GM or Admin account before loading session dashboards or sending live controls."
+			/>
 			<header className="rounded-lg border border-slate-700 bg-slate-900 p-4">
 				<h1 className="text-2xl font-semibold">GM Panel (Day 5)</h1>
 				<p className="mt-1 text-sm text-slate-300">
@@ -261,13 +267,7 @@ const GMPage: React.FC = () => {
 			</header>
 			<ReconnectBanner syncState={syncState} replayedDiffCount={replayedDiffCount} showSynced={showSyncedBanner} />
 
-			<section className="grid gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4 lg:grid-cols-[2fr_1fr_1fr]">
-				<input
-					value={accessToken}
-					onChange={(event) => setAccessToken(event.target.value)}
-					placeholder="GM/Admin bearer token"
-					className="rounded border border-slate-600 bg-slate-800 px-3 py-2"
-				/>
+			<section className="grid gap-3 rounded-lg border border-slate-700 bg-slate-900 p-4 lg:grid-cols-[2fr_1fr]">
 				<input
 					value={selectedSessionId}
 					onChange={(event) => setSelectedSessionId(event.target.value)}

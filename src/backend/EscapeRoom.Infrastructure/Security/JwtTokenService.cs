@@ -19,6 +19,13 @@ public class JwtTokenService(IConfiguration configuration) : IJwtTokenService
             ?? throw new InvalidOperationException("Jwt:Audience missing");
         var key = configuration["Jwt:Key"]
             ?? throw new InvalidOperationException("Jwt:Key missing");
+        var keyBytes = Encoding.UTF8.GetBytes(key);
+
+        if (keyBytes.Length < 32)
+        {
+            throw new InvalidOperationException(
+                $"Jwt:Key must be at least 32 bytes for HS256 signing. Current configured size is {keyBytes.Length} bytes.");
+        }
 
         var expiresAtUtc = DateTime.UtcNow.AddMinutes(30);
         var claims = new List<Claim>
@@ -31,7 +38,7 @@ public class JwtTokenService(IConfiguration configuration) : IJwtTokenService
         };
 
         var credentials = new SigningCredentials(
-            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(key)),
+            new SymmetricSecurityKey(keyBytes),
             SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(

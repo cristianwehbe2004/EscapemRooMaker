@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useAuthSession } from "../auth/authSession";
+import AuthPanel from "../components/auth/AuthPanel";
 import { useNavigate } from "react-router-dom";
 import RoomCanvas from "../components/konva/RoomCanvas";
 import { EditorDocumentDto, TriggerGraphNode, ValidationIssueDto } from "../types/editor";
@@ -20,7 +22,7 @@ const createId = (prefix: string): string => `${prefix}-${Date.now()}-${Math.ran
 
 const EditorPage: React.FC = () => {
   const navigate = useNavigate();
-  const [accessToken, setAccessToken] = useState("");
+  const { accessToken } = useAuthSession();
   const [roomId, setRoomId] = useState("");
   const [editorDoc, setEditorDoc] = useState<EditorDocumentDto>(defaultDocument);
   const [selectedHotspotId, setSelectedHotspotId] = useState<string | null>(null);
@@ -248,13 +250,16 @@ const EditorPage: React.FC = () => {
 
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-4 p-4 text-slate-100">
+      <AuthPanel
+        title="Creator Access"
+        subtitle="Sign in with a Creator or Admin account to load, validate, save, and playtest rooms."
+      />
       <header className="rounded border border-slate-700 bg-slate-900 p-4">
         <h1 className="text-2xl font-semibold">Room Editor + Trigger Builder (Day 6)</h1>
         <p className="mt-1 text-sm text-slate-300">Edit room layout, author triggers, validate, save immutable versions, and launch playtest.</p>
       </header>
 
-      <section className="grid gap-3 rounded border border-slate-700 bg-slate-900 p-4 lg:grid-cols-[2fr_2fr_1fr_1fr_1fr]">
-        <input value={accessToken} onChange={(e) => setAccessToken(e.target.value)} placeholder="Creator/Admin bearer token" className="rounded border border-slate-600 bg-slate-800 px-3 py-2" />
+      <section className="grid gap-3 rounded border border-slate-700 bg-slate-900 p-4 lg:grid-cols-[2fr_1fr_1fr_1fr]">
         <input value={roomId} onChange={(e) => setRoomId(e.target.value)} placeholder="Room UUID" className="rounded border border-slate-600 bg-slate-800 px-3 py-2" />
         <button onClick={loadRoom} disabled={loading} className="rounded bg-slate-700 px-3 py-2 text-sm">Load</button>
         <button onClick={validateDocument} disabled={loading} className="rounded bg-amber-600 px-3 py-2 text-sm text-white">Validate</button>

@@ -1,6 +1,7 @@
 import React from "react";
 import "./App.css";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import AuthSessionManager from "./auth/AuthSessionManager";
 import EditorPage from "./pages/EditorPage";
 import GMPage from "./pages/GMPage";
 import LibraryPage from "./pages/LibraryPage";
@@ -9,6 +10,7 @@ import PlayerPage from "./pages/PlayerPage";
 function App() {
   return (
     <BrowserRouter>
+      <AuthSessionManager />
       <Routes>
         <Route path="/" element={<Navigate to="/player" replace />} />
         <Route path="/player" element={<PlayerPage />} />

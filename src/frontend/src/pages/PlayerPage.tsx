@@ -1,4 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useAuthSession } from "../auth/authSession";
+import AuthPanel from "../components/auth/AuthPanel";
 import RoomCanvas from "../components/konva/RoomCanvas";
 import ActionFeedbackPanel from "../components/ui/ActionFeedbackPanel";
 import InventoryPanel, { InventoryInteractionMode } from "../components/ui/InventoryPanel";
@@ -146,7 +148,6 @@ const PlayerPage: React.FC = () => {
   const sessionIdFromUrl = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("sessionId") : null;
   const [phase, setPhase] = useState<PlayerPhase>(sessionIdFromUrl ? "lobby" : "home");
   const [displayName, setDisplayName] = useState("Player");
-  const [accessToken, setAccessToken] = useState("");
   const [sessionInput, setSessionInput] = useState(sessionIdFromUrl ?? "");
   const [guestActorId] = useState(ensureGuestActorId);
   const [playerSession, setPlayerSession] = useState<PlayerSessionSummary | null>(null);
@@ -167,6 +168,7 @@ const PlayerPage: React.FC = () => {
   const [featuredLoading, setFeaturedLoading] = useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [joiningSession, setJoiningSession] = useState(false);
+  const { accessToken, isAuthenticated, user } = useAuthSession();
   const { runWithCooldown, getRemainingMs } = useActionCooldown(900);
   const lastSnapshotSyncAtRef = useRef(0);
   const clientRef = useRef<GameRealtimeClient | null>(null);
@@ -859,12 +861,11 @@ const PlayerPage: React.FC = () => {
             placeholder="Display name"
             className="rounded border border-slate-600 bg-slate-800 px-3 py-2"
           />
-          <input
-            value={accessToken}
-            onChange={(event) => setAccessToken(event.target.value)}
-            placeholder="Optional bearer token"
-            className="rounded border border-slate-600 bg-slate-800 px-3 py-2"
-          />
+          <p className="rounded border border-slate-700 bg-slate-950/70 px-3 py-2 text-sm text-slate-300">
+            {isAuthenticated && user
+              ? `Authenticated as ${user.username} (${user.role}). Session join will use your bearer token automatically.`
+              : "Guest mode works here by default. Sign in below if you want the player session to use your authenticated bearer token."}
+          </p>
           <input
             value={sessionInput}
             onChange={(event) => setSessionInput(event.target.value)}
@@ -946,6 +947,11 @@ const PlayerPage: React.FC = () => {
 
   return (
     <main className="mx-auto flex max-w-7xl flex-col gap-4 p-4 text-slate-100">
+      <AuthPanel
+        title="Player Sign In"
+        subtitle="Create an account or sign in to use the backend auth endpoints from the UI."
+        guestHint="Player sessions still support guest entry. Auth is optional for joining, but once you sign in the frontend will send your bearer token automatically."
+      />
       <ReconnectBanner syncState={syncState} replayedDiffCount={replayedDiffCount} showSynced={showSyncedBanner} />
       {joiningSession && <p className="rounded border border-sky-700 bg-sky-950 p-3 text-sky-100">Joining session and syncing the room state...</p>}
 

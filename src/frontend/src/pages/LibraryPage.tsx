@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useAuthSession } from "../auth/authSession";
+import AuthPanel from "../components/auth/AuthPanel";
 import { LibraryRoomListItemDto, LibraryRoomsResponse, UpsertRoomRatingResponse } from "../types/library";
 
 const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130";
@@ -22,7 +24,7 @@ const getDifficultyChipClass = (difficulty?: string | null): string => {
 };
 
 const LibraryPage: React.FC = () => {
-  const [accessToken, setAccessToken] = useState("");
+  const { accessToken, isAuthenticated } = useAuthSession();
   const [queryInput, setQueryInput] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sort, setSort] = useState<"newest" | "name" | "rating">("newest");
@@ -76,7 +78,7 @@ const LibraryPage: React.FC = () => {
 
   const setRating = async (roomId: string, score: number) => {
     if (!accessToken.trim()) {
-      setError("Provide a bearer token to rate rooms.");
+      setError("Sign in to rate rooms.");
       return;
     }
 
@@ -118,10 +120,15 @@ const LibraryPage: React.FC = () => {
 
   return (
     <main className="mx-auto max-w-6xl p-6 text-slate-100">
+      <AuthPanel
+        title="Library Access"
+        subtitle="Browse published rooms openly, then sign in when you want to submit ratings."
+        guestHint="Reading the public library does not require auth. Rating does."
+      />
       <h1 className="text-2xl font-semibold">Public Library</h1>
       <p className="mt-1 text-sm text-slate-300">Browse published rooms, search, sort, and rate.</p>
 
-      <section className="mt-4 grid gap-3 rounded border border-slate-700 bg-slate-900 p-4 md:grid-cols-[2fr_1fr_2fr]">
+      <section className="mt-4 grid gap-3 rounded border border-slate-700 bg-slate-900 p-4 md:grid-cols-[2fr_1fr]">
         <input
           value={queryInput}
           onChange={(e) => {
@@ -143,13 +150,9 @@ const LibraryPage: React.FC = () => {
           <option value="name">Name</option>
           <option value="rating">Rating</option>
         </select>
-        <input
-          value={accessToken}
-          onChange={(e) => setAccessToken(e.target.value)}
-          placeholder="Optional bearer token (required for rating)"
-          className="rounded border border-slate-600 bg-slate-800 px-3 py-2"
-        />
       </section>
+
+      {!isAuthenticated && <p className="mt-3 text-sm text-slate-400">Sign in above if you want to rate a room.</p>}
 
       {loading && <p className="mt-4 text-sm text-slate-300">Loading rooms...</p>}
       {error && <p className="mt-4 rounded border border-red-700 bg-red-950 p-2 text-sm text-red-200">{error}</p>}

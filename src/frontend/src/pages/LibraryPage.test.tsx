@@ -1,10 +1,13 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { clearAuthSession } from "../auth/authSession";
 import LibraryPage from "./LibraryPage";
 
 describe("LibraryPage", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    clearAuthSession();
+    window.localStorage.clear();
   });
 
   it("renders library rooms and supports sort changes", async () => {
@@ -83,6 +86,21 @@ describe("LibraryPage", () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
+          accessToken: "token-123",
+          refreshToken: "refresh-123",
+          accessTokenExpiresAtUtc: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+          user: {
+            id: "user-1",
+            username: "player1",
+            email: "player1@escaperoom.local",
+            role: "Player",
+          },
+        }),
+        headers: new Headers({ "content-type": "application/json" }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
           items: [
             {
               roomId: "room-1",
@@ -117,7 +135,12 @@ describe("LibraryPage", () => {
       expect(screen.getByText("Vault Alpha")).toBeInTheDocument();
     });
 
-    fireEvent.change(screen.getByPlaceholderText(/optional bearer token/i), { target: { value: "token-123" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "player1@escaperoom.local" } });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "Player123!" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Sign In" })[1]);
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as player1/i)).toBeInTheDocument();
+    });
     fireEvent.click(screen.getByRole("button", { name: "Rate 5" }));
 
     await waitFor(() => {

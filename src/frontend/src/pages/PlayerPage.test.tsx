@@ -1,5 +1,6 @@
 import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { clearAuthSession } from "../auth/authSession";
 import PlayerPage from "./PlayerPage";
 import { useGameStore } from "../store/gameStore";
 
@@ -110,9 +111,29 @@ describe("PlayerPage", () => {
   beforeEach(() => {
     useGameStore.getState().reset();
     jest.clearAllMocks();
+    clearAuthSession();
+    window.localStorage.clear();
 
     jest.spyOn(globalThis, "fetch").mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === "string" ? input : input.toString();
+      if (url.endsWith("/api/auth/login") && init?.method === "POST") {
+        return {
+          ok: true,
+          json: async () => ({
+            accessToken: "token-123",
+            refreshToken: "refresh-123",
+            accessTokenExpiresAtUtc: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+            user: {
+              id: "user-1",
+              username: "player1",
+              email: "player1@escaperoom.local",
+              role: "Player",
+            },
+          }),
+          headers: new Headers({ "content-type": "application/json" }),
+        } as Response;
+      }
+
       if (url.includes("/api/library/rooms")) {
         return {
           ok: true,
@@ -254,6 +275,35 @@ describe("PlayerPage", () => {
     });
 
     expect(screen.getByText(/Spectator mode is active/i)).toBeInTheDocument();
+  });
+
+  it("signs in through the UI and reuses the bearer token for session join", async () => {
+    render(<PlayerPage />);
+
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "player1@escaperoom.local" } });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "Player123!" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Sign In" })[1]);
+
+    await waitFor(() => {
+      expect(screen.getByText(/signed in as player1/i)).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
+      target: { value: "session-123" },
+    });
+    fireEvent.click(screen.getByText("Join Session"));
+
+    await waitFor(() => {
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        "http://localhost:5130/api/player/sessions/session-123/join",
+        expect.objectContaining({
+          method: "POST",
+          headers: expect.objectContaining({
+            Authorization: "Bearer token-123",
+          }),
+        })
+      );
+    });
   });
 
   it("keeps the player in a recoverable state when realtime join fails", async () => {

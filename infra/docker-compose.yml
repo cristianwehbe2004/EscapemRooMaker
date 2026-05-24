@@ -8,7 +8,7 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - .:/workspace
+      - ..:/workspace
       - frontend_node_modules:/workspace/src/frontend/node_modules
     depends_on:
       backend:
@@ -27,11 +27,11 @@ services:
       AzureBlob__ConnectionString: UseDevelopmentStorage=true
       Jwt__Issuer: escaperoom
       Jwt__Audience: escaperoom-clients
-      Jwt__Key: replace-with-long-dev-secret
+      Jwt__Key: replace-with-long-dev-secret-minimum-32-bytes
     ports:
       - "5130:5130"
     volumes:
-      - ./src/backend/EscapeRoom.Api/bin/Release/net10.0/publish:/app:ro
+      - ../src/backend/EscapeRoom.Api/bin/Release/net10.0/publish:/app:ro
     depends_on:
       postgres:
         condition: service_healthy
