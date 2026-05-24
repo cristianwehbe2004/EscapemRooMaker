@@ -153,7 +153,7 @@ describe("PlayerPage", () => {
       if (url.includes("/join") && init?.method === "POST") {
         return {
           ok: true,
-          json: async () => buildSessionSummary({ status: "Active", joinMode: "spectator", canSubmitActions: false }),
+          json: async () => buildSessionSummary({ status: "Active", joinMode: "player", canSubmitActions: true }),
           headers: new Headers({ "content-type": "application/json" }),
         } as Response;
       }
@@ -259,7 +259,7 @@ describe("PlayerPage", () => {
     expect(screen.getByText(/Share this link:/i)).toBeInTheDocument();
   });
 
-  it("shows spectator banner when joining an already active session", async () => {
+  it("joins an already active session as a shared player", async () => {
     render(<PlayerPage />);
 
     fireEvent.change(screen.getByPlaceholderText("Session UUID"), {
@@ -274,7 +274,8 @@ describe("PlayerPage", () => {
       );
     });
 
-    expect(screen.getByText(/Spectator mode is active/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Spectator mode is active/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/role player/i)).toBeInTheDocument();
   });
 
   it("signs in through the UI and reuses the bearer token for session join", async () => {

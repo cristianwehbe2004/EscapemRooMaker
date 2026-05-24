@@ -38,6 +38,26 @@ public class PlayerSessionSummary
     public string GmJoinPath { get; set; } = string.Empty;
     public string ActorId { get; set; } = string.Empty;
     public string DisplayName { get; set; } = string.Empty;
+    public bool IsHost { get; set; }
     public string JoinMode { get; set; } = "player";
     public bool CanSubmitActions { get; set; } = true;
+    public IReadOnlyList<PlayerSessionParticipant> Participants { get; set; } = [];
+}
+
+public class PlayerSessionParticipant
+{
+    public string ActorId { get; set; } = string.Empty;
+    public string DisplayName { get; set; } = string.Empty;
+    public string JoinMode { get; set; } = "player";
+    public bool CanSubmitActions { get; set; } = true;
+    public bool IsHost { get; set; }
+    public DateTime? JoinedAtUtc { get; set; }
+    public DateTime? LastSeenAtUtc { get; set; }
+}
+
+public class KickSessionParticipantRequest
+{
+    public string TargetActorId { get; set; } = string.Empty;
+    public string? DisplayName { get; set; }
+    public string? GuestActorId { get; set; }
 }

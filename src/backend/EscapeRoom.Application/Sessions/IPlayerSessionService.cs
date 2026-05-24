@@ -30,6 +30,12 @@ public interface IPlayerSessionService
         PlayerIdentity identity,
         CancellationToken cancellationToken = default);
 
+    Task<PlayerSessionSummary> KickParticipantAsync(
+        Guid sessionId,
+        string targetActorId,
+        PlayerIdentity identity,
+        CancellationToken cancellationToken = default);
+
     Task<bool> CanSubmitActionsAsync(
         Guid sessionId,
         string actorId,

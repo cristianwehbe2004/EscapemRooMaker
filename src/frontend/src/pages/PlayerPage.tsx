@@ -11,7 +11,13 @@ import { runSessionRecovery } from "../realtime/recoveryController";
 import { diffNeedsSnapshotResync, useGameStore } from "../store/gameStore";
 import { ActionError, parseActionError } from "../types/actionError";
 import { LibraryRoomListItemDto, LibraryRoomsResponse } from "../types/library";
-import { CreateSessionRequest, JoinSessionRequest, PlayerSessionSummary } from "../types/playerSession";
+import {
+  CreateSessionRequest,
+  JoinSessionRequest,
+  KickSessionParticipantRequest,
+  PlayerSessionParticipant,
+  PlayerSessionSummary,
+} from "../types/playerSession";
 import { InventoryCombineActionPayload, InventoryUseActionPayload, PlayerActionEnvelope } from "../types/realtime";
 import { InventoryItem, RoomHotspot } from "../types/gameState";
 
@@ -168,11 +174,15 @@ const PlayerPage: React.FC = () => {
   const [featuredLoading, setFeaturedLoading] = useState(false);
   const [selectedRoomId, setSelectedRoomId] = useState<string | null>(null);
   const [joiningSession, setJoiningSession] = useState(false);
+  const [sessionParticipants, setSessionParticipants] = useState<PlayerSessionParticipant[]>([]);
+  const [hostNotifications, setHostNotifications] = useState<string[]>([]);
+  const [kickingActorId, setKickingActorId] = useState<string | null>(null);
   const { accessToken, isAuthenticated, user } = useAuthSession();
   const { runWithCooldown, getRemainingMs } = useActionCooldown(900);
   const lastSnapshotSyncAtRef = useRef(0);
   const clientRef = useRef<GameRealtimeClient | null>(null);
   const autoJoinAttemptedRef = useRef(false);
+  const knownParticipantIdsRef = useRef<Set<string>>(new Set());
 
   const {
     sessionId,
@@ -329,6 +339,9 @@ const PlayerPage: React.FC = () => {
   const connectSessionAndEnter = async (summary: PlayerSessionSummary, phaseOnSuccess: PlayerPhase) => {
     setJoiningSession(true);
     setPlayerSession(summary);
+    setSessionParticipants(summary.participants ?? []);
+    setHostNotifications([]);
+    knownParticipantIdsRef.current = new Set((summary.participants ?? []).map((participant) => participant.actorId));
     setSessionInput(summary.sessionId);
 
     try {
@@ -350,6 +363,9 @@ const PlayerPage: React.FC = () => {
     setActionError(null);
     await client.stop();
     setPlayerSession(null);
+    setSessionParticipants([]);
+    setHostNotifications([]);
+    knownParticipantIdsRef.current = new Set();
     setSessionInput("");
     setFocusedTargetId(null);
     clearInventoryIntent();
@@ -362,6 +378,9 @@ const PlayerPage: React.FC = () => {
     setActionError(null);
     await client.stop();
     setPlayerSession(null);
+    setSessionParticipants([]);
+    setHostNotifications([]);
+    knownParticipantIdsRef.current = new Set();
     setSessionInput("");
     setFocusedTargetId(null);
     clearInventoryIntent();
@@ -474,6 +493,7 @@ const PlayerPage: React.FC = () => {
         joinRequestBody()
       );
       setPlayerSession(summary);
+      setSessionParticipants(summary.participants ?? []);
       if (!connected) {
         await connectSessionAndEnter(summary, "game");
       } else {
@@ -496,6 +516,83 @@ const PlayerPage: React.FC = () => {
     void joinHostedSession(sessionIdFromUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionIdFromUrl]);
+
+  useEffect(() => {
+    if (phase !== "lobby" || !playerSession?.sessionId) {
+      return;
+    }
+
+    let cancelled = false;
+    const syncSession = async () => {
+      try {
+        const summary = await callSessionApi<PlayerSessionSummary>(
+          `/api/player/sessions/${playerSession.sessionId}?displayName=${encodeURIComponent(displayName)}&guestActorId=${encodeURIComponent(guestActorId)}`
+        );
+        if (cancelled) {
+          return;
+        }
+
+        setPlayerSession(summary);
+        const participants = summary.participants ?? [];
+        setSessionParticipants(participants);
+
+        if (summary.isHost) {
+          const currentParticipantIds = new Set(participants.map((entry) => entry.actorId));
+          const newParticipants = participants.filter(
+            (entry) => !knownParticipantIdsRef.current.has(entry.actorId) && entry.actorId !== summary.actorId
+          );
+          if (newParticipants.length > 0) {
+            setHostNotifications((current) =>
+              [...newParticipants.map((entry) => `${entry.displayName} joined your lobby.`), ...current].slice(0, 5)
+            );
+          }
+          knownParticipantIdsRef.current = currentParticipantIds;
+        } else {
+          knownParticipantIdsRef.current = new Set(participants.map((entry) => entry.actorId));
+        }
+      } catch (error) {
+        if (!cancelled) {
+          setConnectionError(error instanceof Error ? error.message : "Could not refresh session participants.");
+        }
+      }
+    };
+
+    void syncSession();
+    const intervalId = window.setInterval(() => {
+      void syncSession();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [displayName, guestActorId, phase, playerSession?.sessionId]);
+
+  const kickParticipant = async (participant: PlayerSessionParticipant) => {
+    if (!playerSession?.sessionId || !participant.actorId) {
+      return;
+    }
+
+    setConnectionError(null);
+    setKickingActorId(participant.actorId);
+    try {
+      const payload: KickSessionParticipantRequest = {
+        targetActorId: participant.actorId,
+        displayName,
+        guestActorId,
+      };
+      const summary = await callSessionApi<PlayerSessionSummary>(`/api/player/sessions/${playerSession.sessionId}/kick`, "POST", payload);
+      setPlayerSession(summary);
+      const participants = summary.participants ?? [];
+      setSessionParticipants(participants);
+      knownParticipantIdsRef.current = new Set(participants.map((entry) => entry.actorId));
+      setHostNotifications((current) => [`${participant.displayName} was removed from the lobby.`, ...current].slice(0, 5));
+    } catch (error) {
+      setConnectionError(error instanceof Error ? error.message : "Could not remove participant.");
+    } finally {
+      setKickingActorId(null);
+    }
+  };
 
   const cooldownChips = useMemo(() => {
     void cooldownTick;
@@ -976,7 +1073,7 @@ const PlayerPage: React.FC = () => {
                   Retry Connect
                 </button>
               )}
-              {phase === "lobby" && playerSession.canSubmitActions && (
+              {phase === "lobby" && playerSession.isHost && (
                 <button onClick={startHostedSession} className="rounded bg-emerald-600 px-4 py-2 text-white">
                   Start Session
                 </button>
@@ -984,8 +1081,37 @@ const PlayerPage: React.FC = () => {
             </div>
           </div>
           {phase === "lobby" && (
-            <div className="mt-3 rounded border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">
-              Share this link: {playerSession.playerJoinPath}
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="rounded border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">
+                Share this link: {playerSession.playerJoinPath}
+              </div>
+              <div className="rounded border border-slate-700 bg-slate-950 p-3 text-sm text-slate-300">
+                <p className="font-medium text-slate-200">Participants ({sessionParticipants.length})</p>
+                <ul className="mt-2 space-y-2">
+                  {sessionParticipants.map((participant) => (
+                    <li key={participant.actorId} className="flex items-center justify-between gap-2 rounded border border-slate-700 bg-slate-900 px-2 py-1">
+                      <span>
+                        {participant.displayName}
+                        {participant.isHost ? " (Host)" : ""}
+                      </span>
+                      {playerSession.isHost && !participant.isHost && status === "Pending" && (
+                        <button
+                          onClick={() => void kickParticipant(participant)}
+                          disabled={kickingActorId === participant.actorId}
+                          className="rounded bg-rose-700 px-2 py-1 text-xs text-white disabled:opacity-50"
+                        >
+                          {kickingActorId === participant.actorId ? "Removing..." : "Kick"}
+                        </button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+                {playerSession.isHost && hostNotifications.length > 0 && (
+                  <div className="mt-3 rounded border border-sky-700 bg-sky-950/60 p-2 text-xs text-sky-100">
+                    {hostNotifications[0]}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </section>

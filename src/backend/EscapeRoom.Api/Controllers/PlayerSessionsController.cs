@@ -112,6 +112,27 @@ public class PlayerSessionsController(IPlayerSessionService playerSessionService
         }
     }
 
+    [HttpPost("{sessionId:guid}/kick")]
+    public async Task<ActionResult<PlayerSessionSummary>> KickParticipant(
+        Guid sessionId,
+        [FromBody] KickSessionParticipantRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var response = await playerSessionService.KickParticipantAsync(
+                sessionId,
+                request.TargetActorId,
+                ResolveIdentity(request.DisplayName, request.GuestActorId),
+                cancellationToken);
+            return Ok(response);
+        }
+        catch (Exception ex) when (TryMapSessionError(ex, out var mapped))
+        {
+            return mapped;
+        }
+    }
+
     private PlayerIdentity ResolveIdentity(string? displayName, string? guestActorId)
     {
         var subject = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");

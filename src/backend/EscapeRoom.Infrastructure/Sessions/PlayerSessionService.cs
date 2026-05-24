@@ -20,7 +20,6 @@ public class PlayerSessionService(
     private const string ClocktowerRoomName = "Clocktower Foyer";
     private const int ClocktowerDurationMinutes = 3;
     private const string JoinModePlayer = "player";
-    private const string JoinModeSpectator = "spectator";
 
     public async Task<PlayerSessionSummary> CreateSessionAsync(
         CreateSessionRequest request,
@@ -146,6 +145,49 @@ public class PlayerSessionService(
         return BuildSummary(room, session, identity, DateTime.UtcNow, access);
     }
 
+    public async Task<PlayerSessionSummary> KickParticipantAsync(
+        Guid sessionId,
+        string targetActorId,
+        PlayerIdentity identity,
+        CancellationToken cancellationToken = default)
+    {
+        var (session, room) = await GetSessionWithRoomAsync(sessionId, cancellationToken);
+        await RefreshExpirationAsync(session, room, cancellationToken);
+
+        if (session.Status != SessionStatus.Pending)
+        {
+            throw new SessionServiceException("Participants can only be kicked before the session starts.");
+        }
+
+        if (string.IsNullOrWhiteSpace(session.HostActorId) ||
+            !session.HostActorId.Equals(identity.ActorId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SessionAccessDeniedException("Only the session host can remove participants.");
+        }
+
+        if (string.IsNullOrWhiteSpace(targetActorId))
+        {
+            throw new SessionServiceException("A target actor id is required.");
+        }
+
+        if (session.HostActorId.Equals(targetActorId, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new SessionServiceException("The host cannot remove themselves from the session.");
+        }
+
+        var now = DateTime.UtcNow;
+        var changed = RemoveParticipantFromState(session, room, targetActorId, now);
+        if (!changed)
+        {
+            throw new SessionServiceException("Participant was not found in this session.");
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await SaveRealtimeSnapshotAsync(session, now, cancellationToken);
+        var access = ResolveJoinAccess(session, identity.ActorId);
+        return BuildSummary(room, session, identity, now, access);
+    }
+
     public async Task<bool> CanSubmitActionsAsync(
         Guid sessionId,
         string actorId,
@@ -248,7 +290,9 @@ public class PlayerSessionService(
     }
 
     private static PlayerSessionSummary BuildSummary(Room room, GameSession session, PlayerIdentity identity, DateTime now, JoinAccess access)
-        => new()
+    {
+        var participants = EnsureHostParticipant(ExtractParticipants(session), session, identity, now, access);
+        return new PlayerSessionSummary
         {
             SessionId = session.Id,
             RoomId = room.Id,
@@ -265,9 +309,12 @@ public class PlayerSessionService(
             GmJoinPath = $"/gm?sessionId={session.Id}",
             ActorId = identity.ActorId,
             DisplayName = identity.DisplayName,
+            IsHost = string.Equals(session.HostActorId, identity.ActorId, StringComparison.OrdinalIgnoreCase),
             JoinMode = access.JoinMode,
-            CanSubmitActions = access.CanSubmitActions
+            CanSubmitActions = access.CanSubmitActions,
+            Participants = participants
         };
+    }
 
     private static JoinAccess ResolveJoinAccess(GameSession session, string actorId)
     {
@@ -280,11 +327,6 @@ public class PlayerSessionService(
         if (participant is not null)
         {
             return participant.Value;
-        }
-
-        if (session.Status == SessionStatus.Active)
-        {
-            return new JoinAccess(JoinModeSpectator, false);
         }
 
         return new JoinAccess(JoinModePlayer, true);
@@ -357,6 +399,122 @@ public class PlayerSessionService(
         var joinMode = participant["joinMode"]?.GetValue<string>() ?? JoinModePlayer;
         var canSubmitActions = participant["canSubmitActions"]?.GetValue<bool>() ?? true;
         return new JoinAccess(joinMode, canSubmitActions);
+    }
+
+    private static bool RemoveParticipantFromState(
+        GameSession session,
+        Room room,
+        string actorId,
+        DateTime now)
+    {
+        var state = ParseState(session.StateSnapshot);
+        if (state["session"] is not JsonObject sessionNode || sessionNode["participants"] is not JsonArray participants)
+        {
+            return false;
+        }
+
+        var removed = false;
+        for (var i = participants.Count - 1; i >= 0; i--)
+        {
+            if (participants[i] is not JsonObject participant)
+            {
+                continue;
+            }
+
+            var participantActorId = participant["actorId"]?.GetValue<string>();
+            if (!string.Equals(participantActorId, actorId, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            participants.RemoveAt(i);
+            removed = true;
+        }
+
+        if (!removed)
+        {
+            return false;
+        }
+
+        session.StateSnapshot = state.ToJsonString(JsonOptions());
+        session.StateSnapshot = SessionStateFactory.WithSessionState(session.StateSnapshot, room, session, now);
+        return true;
+    }
+
+    private static IReadOnlyList<PlayerSessionParticipant> ExtractParticipants(GameSession session)
+    {
+        var state = ParseState(session.StateSnapshot);
+        if (state["session"] is not JsonObject sessionNode || sessionNode["participants"] is not JsonArray participants)
+        {
+            return [];
+        }
+
+        var result = new List<PlayerSessionParticipant>();
+        foreach (var participantNode in participants.OfType<JsonObject>())
+        {
+            var actorId = participantNode["actorId"]?.GetValue<string>() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(actorId))
+            {
+                continue;
+            }
+
+            DateTime? joinedAtUtc = null;
+            if (DateTime.TryParse(participantNode["joinedAtUtc"]?.GetValue<string>(), out var joinedAt))
+            {
+                joinedAtUtc = joinedAt;
+            }
+
+            DateTime? lastSeenAtUtc = null;
+            if (DateTime.TryParse(participantNode["lastSeenAtUtc"]?.GetValue<string>(), out var lastSeenAt))
+            {
+                lastSeenAtUtc = lastSeenAt;
+            }
+
+            result.Add(new PlayerSessionParticipant
+            {
+                ActorId = actorId,
+                DisplayName = participantNode["displayName"]?.GetValue<string>() ?? "Player",
+                JoinMode = participantNode["joinMode"]?.GetValue<string>() ?? JoinModePlayer,
+                CanSubmitActions = participantNode["canSubmitActions"]?.GetValue<bool>() ?? true,
+                IsHost = string.Equals(session.HostActorId, actorId, StringComparison.OrdinalIgnoreCase),
+                JoinedAtUtc = joinedAtUtc,
+                LastSeenAtUtc = lastSeenAtUtc
+            });
+        }
+
+        return result
+            .OrderByDescending(x => x.IsHost)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<PlayerSessionParticipant> EnsureHostParticipant(
+        IReadOnlyList<PlayerSessionParticipant> participants,
+        GameSession session,
+        PlayerIdentity identity,
+        DateTime now,
+        JoinAccess access)
+    {
+        if (participants.Count > 0)
+        {
+            return participants;
+        }
+
+        var actorId = !string.IsNullOrWhiteSpace(session.HostActorId) ? session.HostActorId : identity.ActorId;
+        var displayName = !string.IsNullOrWhiteSpace(identity.DisplayName) ? identity.DisplayName : "Player";
+        return
+        [
+            new PlayerSessionParticipant
+            {
+                ActorId = actorId,
+                DisplayName = displayName,
+                JoinMode = access.JoinMode,
+                CanSubmitActions = access.CanSubmitActions,
+                IsHost = true,
+                JoinedAtUtc = now,
+                LastSeenAtUtc = now
+            }
+        ];
     }
 
     private static JsonObject ParseState(string json)

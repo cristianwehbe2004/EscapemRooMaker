@@ -26,6 +26,24 @@ export type PlayerSessionSummary = {
   gmJoinPath: string;
   actorId: string;
   displayName: string;
+  isHost?: boolean;
   joinMode: "player" | "spectator" | string;
   canSubmitActions: boolean;
+  participants?: PlayerSessionParticipant[];
+};
+
+export type PlayerSessionParticipant = {
+  actorId: string;
+  displayName: string;
+  joinMode: "player" | "spectator" | string;
+  canSubmitActions: boolean;
+  isHost?: boolean;
+  joinedAtUtc?: string | null;
+  lastSeenAtUtc?: string | null;
+};
+
+export type KickSessionParticipantRequest = {
+  targetActorId: string;
+  displayName?: string;
+  guestActorId?: string;
 };
