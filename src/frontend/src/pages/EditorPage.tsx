@@ -272,7 +272,12 @@ const EditorPage: React.FC = () => {
             <h2 className="text-lg font-semibold">Visual Editor</h2>
             <button onClick={addHotspot} className="rounded bg-blue-600 px-3 py-1 text-sm text-white">Add Hotspot</button>
           </div>
-          <RoomCanvas room={editorDoc.room} onInspect={(id) => setSelectedHotspotId(id)} onPickup={() => undefined} />
+          <RoomCanvas
+            room={editorDoc.room}
+            onInspect={(id) => setSelectedHotspotId(id)}
+            onPickup={(id) => setSelectedHotspotId(id)}
+            onHotspotFocus={(id) => setSelectedHotspotId(id)}
+          />
 
           {selectedHotspot && (
             <div className="grid gap-2 rounded border border-slate-700 bg-slate-800 p-3 md:grid-cols-2">
