@@ -24,7 +24,6 @@ services:
       ASPNETCORE_URLS: http://0.0.0.0:5130
       ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=escaperoom;Username=escaperoom;Password=escaperoom
       ConnectionStrings__Redis: redis:6379
-      AzureBlob__ConnectionString: UseDevelopmentStorage=true
       Jwt__Issuer: escaperoom
       Jwt__Audience: escaperoom-clients
       Jwt__Key: replace-with-long-dev-secret-minimum-32-bytes
@@ -37,8 +36,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      azurite:
-        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/5130'"]
       interval: 10s
@@ -77,17 +74,7 @@ services:
       timeout: 3s
       retries: 10
 
-  azurite:
-    image: mcr.microsoft.com/azure-storage/azurite
-    container_name: escaperoom-azurite
-    command: "azurite-blob --blobHost 0.0.0.0 --location /data"
-    ports:
-      - "10000:10000"
-    volumes:
-      - azurite_data:/data
-
 volumes:
   frontend_node_modules:
   pg_data:
   redis_data:
-  azurite_data:

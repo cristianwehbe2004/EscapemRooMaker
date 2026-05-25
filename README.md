@@ -66,7 +66,6 @@ This starts:
 - backend API + SignalR hub on `http://localhost:5130`
 - PostgreSQL on `localhost:55432`
 - Redis on `localhost:6379`
-- Azurite Blob Storage on `localhost:10000`
 
 The compose setup also runs EF migrations and seeds baseline data before the backend starts.
 

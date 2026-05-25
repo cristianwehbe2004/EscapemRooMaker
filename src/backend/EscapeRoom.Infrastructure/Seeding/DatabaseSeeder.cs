@@ -1499,6 +1499,54 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
 
                     new TriggerNodeDefinition
                     {
+                        NodeId = "inspect-side-drawer-action",
+                        Family = "condition",
+                        Type = "actionTypeEquals",
+                        Config = new Dictionary<string, object?> { ["expectedActionType"] = "inspect" }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-side-drawer-target",
+                        Family = "condition",
+                        Type = "targetEquals",
+                        Config = new Dictionary<string, object?> { ["targetId"] = "side-drawer" }
+                    },
+                    new TriggerNodeDefinition { NodeId = "inspect-side-drawer-all", Family = "combinator", Type = "allTrue" },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-side-drawer-reveal",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "door-badge",
+                            ["visible"] = true,
+                            ["available"] = true,
+                            ["interactive"] = true
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-side-drawer-close",
+                        Family = "effect",
+                        Type = "setObjectState",
+                        Config = new Dictionary<string, object?>
+                        {
+                            ["objectId"] = "side-drawer",
+                            ["available"] = false,
+                            ["interactive"] = false
+                        }
+                    },
+                    new TriggerNodeDefinition
+                    {
+                        NodeId = "inspect-side-drawer-msg",
+                        Family = "effect",
+                        Type = "emitMessage",
+                        Config = new Dictionary<string, object?> { ["message"] = "A security badge slides forward inside the drawer." }
+                    },
+
+                    new TriggerNodeDefinition
+                    {
                         NodeId = "pickup-badge-action",
                         Family = "condition",
                         Type = "actionTypeEquals",
@@ -2186,6 +2234,12 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     new TriggerEdgeDefinition { FromNodeId = "pickup-handle-all", ToNodeId = "pickup-handle-add" },
                     new TriggerEdgeDefinition { FromNodeId = "pickup-handle-all", ToNodeId = "pickup-handle-hide" },
 
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-side-drawer-action", ToNodeId = "inspect-side-drawer-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-side-drawer-target", ToNodeId = "inspect-side-drawer-all" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-side-drawer-all", ToNodeId = "inspect-side-drawer-reveal" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-side-drawer-all", ToNodeId = "inspect-side-drawer-close" },
+                    new TriggerEdgeDefinition { FromNodeId = "inspect-side-drawer-all", ToNodeId = "inspect-side-drawer-msg" },
+
                     new TriggerEdgeDefinition { FromNodeId = "pickup-badge-action", ToNodeId = "pickup-badge-all" },
                     new TriggerEdgeDefinition { FromNodeId = "pickup-badge-target", ToNodeId = "pickup-badge-all" },
                     new TriggerEdgeDefinition { FromNodeId = "pickup-badge-all", ToNodeId = "pickup-badge-add" },
@@ -2302,7 +2356,8 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     new RoomHotspotDto { Id = "right-cabinet-tool", Name = "Right Cabinet", VisualKind = "drawer", Variant = "steel", X = 214, Y = 188, Width = 82, Height = 108, Color = "#64748b" },
                     new RoomHotspotDto { Id = "desk-drawer-empty", Name = "Desk Drawer", VisualKind = "drawer", Variant = "wood", X = 274, Y = 408, Width = 102, Height = 52, Color = "#8a5c3d" },
                     new RoomHotspotDto { Id = "telescoping-handle-cache", Name = "Telescoping Handle", VisualKind = "switch", Variant = "tool", X = 220, Y = 214, Width = 54, Height = 54, Color = "#22d3ee", Visible = false, Available = false, Interactive = false },
-                    new RoomHotspotDto { Id = "door-badge", Name = "Security Badge", VisualKind = "note", Variant = "badge", X = 798, Y = 150, Width = 94, Height = 78, Color = "#f59e0b", HitArea = "ellipse" },
+                    new RoomHotspotDto { Id = "side-drawer", Name = "Side Drawer", VisualKind = "drawer", Variant = "wood", X = 362, Y = 406, Width = 88, Height = 52, Color = "#8a5c3d" },
+                    new RoomHotspotDto { Id = "door-badge", Name = "Security Badge", VisualKind = "note", Variant = "badge", X = 386, Y = 374, Width = 68, Height = 52, Color = "#f59e0b", HitArea = "ellipse", Visible = false, Available = false, Interactive = false },
                     new RoomHotspotDto { Id = "floor-vent", Name = "Floor Vent", VisualKind = "lock", Variant = "vent", X = 548, Y = 510, Width = 152, Height = 54, Color = "#94a3b8", TargetableModes = ["use"], TargetableItemIds = ["magnetic-retriever"] },
                     new RoomHotspotDto { Id = "office-key-cache", Name = "Office Key", VisualKind = "key", Variant = "hidden", X = 592, Y = 494, Width = 70, Height = 36, Color = "#fcd34d", Visible = false, Available = false, Interactive = false },
                     new RoomHotspotDto { Id = "outer-door", Name = "Outer Security Door", VisualKind = "door", Variant = "locked", X = 754, Y = 102, Width = 184, Height = 330, Color = "#6b4f3a", Locked = true, Available = false, Interactive = false },
@@ -2315,7 +2370,8 @@ public class DatabaseSeeder(AppDbContext dbContext, IPasswordHasher<User> passwo
                     new RoomObjectStateDto { Id = "right-cabinet-tool", Visible = true, Available = true, Locked = false, Interactive = true },
                     new RoomObjectStateDto { Id = "desk-drawer-empty", Visible = true, Available = true, Locked = false, Interactive = true },
                     new RoomObjectStateDto { Id = "telescoping-handle-cache", Visible = false, Available = false, Locked = false, Interactive = false },
-                    new RoomObjectStateDto { Id = "door-badge", Visible = true, Available = true, Locked = false, Interactive = true },
+                    new RoomObjectStateDto { Id = "side-drawer", Visible = true, Available = true, Locked = false, Interactive = true },
+                    new RoomObjectStateDto { Id = "door-badge", Visible = false, Available = false, Locked = false, Interactive = false },
                     new RoomObjectStateDto { Id = "floor-vent", Visible = true, Available = true, Locked = false, Interactive = true },
                     new RoomObjectStateDto { Id = "office-key-cache", Visible = false, Available = false, Locked = false, Interactive = false },
                     new RoomObjectStateDto { Id = "outer-door", Visible = true, Available = false, Locked = true, Interactive = false },
