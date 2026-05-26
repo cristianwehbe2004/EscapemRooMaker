@@ -25,6 +25,14 @@ const apiBaseUrl = process.env.REACT_APP_API_BASE_URL ?? "http://localhost:5130"
 const guestActorStorageKey = "escape-room.guestActorId";
 const defaultSessionMinutes = 10;
 
+const createClientActionId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
 type PlayerPhase = "home" | "map" | "lobby" | "game";
 type HotspotQuickActionType = "inspect" | "pickup" | "use";
 
@@ -48,7 +56,7 @@ const ensureGuestActorId = (): string => {
     return existing;
   }
 
-  const generated = `guest-${crypto.randomUUID()}`;
+  const generated = `guest-${createClientActionId()}`;
   window.localStorage.setItem(guestActorStorageKey, generated);
   return generated;
 };
@@ -692,7 +700,7 @@ const PlayerPage: React.FC = () => {
       actor,
       target: targetId,
       payload,
-      clientActionId: crypto.randomUUID(),
+      clientActionId: createClientActionId(),
       timestampUtc: new Date().toISOString(),
     };
 

@@ -4,7 +4,7 @@ services:
     container_name: escaperoom-frontend
     working_dir: /workspace/src/frontend
     command: >
-      bash -lc "npm install && CHOKIDAR_USEPOLLING=true HOST=0.0.0.0 REACT_APP_API_BASE_URL=http://16.16.202.96:5130 npm start"
+      bash -lc "npm install && CHOKIDAR_USEPOLLING=true HOST=0.0.0.0 REACT_APP_API_BASE_URL=${REACT_APP_API_BASE_URL:-http://16.16.202.96:5130} npm start"
     ports:
       - "3000:3000"
     volumes:
@@ -27,6 +27,10 @@ services:
       Jwt__Issuer: escaperoom
       Jwt__Audience: escaperoom-clients
       Jwt__Key: replace-with-long-dev-secret-minimum-32-bytes
+      Cors__AllowedOrigins__0: http://localhost:3000
+      Cors__AllowedOrigins__1: ${FRONTEND_ORIGIN:-http://16.16.202.96:3000}
+      Database__ApplyMigrationsOnStartup: ${APPLY_MIGRATIONS_ON_STARTUP:-true}
+      Database__SeedOnStartup: ${SEED_DATABASE_ON_STARTUP:-false}
     ports:
       - "5130:5130"
     volumes:

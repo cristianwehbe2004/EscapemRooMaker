@@ -5,6 +5,7 @@ using EscapeRoom.Realtime.Hubs;
 using EscapeRoom.Realtime.Presence;
 using EscapeRoom.Realtime.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using System.Text;
@@ -68,8 +69,21 @@ builder.Services.AddAuthorization(options =>
 
 builder.Services.AddCors(options =>
 {
+    var allowedOrigins = builder.Configuration
+        .GetSection("Cors:AllowedOrigins")
+        .Get<string[]>()
+        ?.Where(origin => !string.IsNullOrWhiteSpace(origin))
+        .Select(origin => origin.Trim().TrimEnd('/'))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .ToArray();
+
+    if (allowedOrigins is null || allowedOrigins.Length == 0)
+    {
+        allowedOrigins = ["http://localhost:3000"];
+    }
+
     options.AddPolicy("Frontend", policy =>
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins(allowedOrigins)
             .AllowAnyHeader()
             .AllowAnyMethod()
             .AllowCredentials());
@@ -85,6 +99,20 @@ if (args.Contains("--seed"))
     var seeder = seedScope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
     await seeder.SeedAsync();
     return;
+}
+
+if (app.Configuration.GetValue<bool>("Database:ApplyMigrationsOnStartup"))
+{
+    using var migrationScope = app.Services.CreateScope();
+    var dbContext = migrationScope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
+
+if (app.Configuration.GetValue<bool>("Database:SeedOnStartup"))
+{
+    using var seedScope = app.Services.CreateScope();
+    var seeder = seedScope.ServiceProvider.GetRequiredService<DatabaseSeeder>();
+    await seeder.SeedAsync();
 }
 
 if (app.Environment.IsDevelopment())
@@ -106,6 +134,13 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapHealthChecks("/health");
+app.MapGet("/health/db", async (AppDbContext dbContext, CancellationToken cancellationToken) =>
+{
+    var canConnect = await dbContext.Database.CanConnectAsync(cancellationToken);
+    return canConnect
+        ? Results.Ok(new { status = "Healthy", database = "Postgres" })
+        : Results.Problem("Postgres connection failed.", statusCode: StatusCodes.Status503ServiceUnavailable);
+});
 app.MapControllers();
 app.MapHub<GameHub>("/hubs/game");
 
